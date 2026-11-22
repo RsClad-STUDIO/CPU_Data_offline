@@ -13,6 +13,7 @@ from ..config import SETTINGS
 
 PROJECT_ROOT = os.fspath(SETTINGS.project_root)
 DB_PATH = SETTINGS.db_path
+SCHEMA_VERSION = 2
 CPU_COLUMNS = (
     "name", "brand", "family", "cores", "threads", "base_clock",
     "boost_clock", "tdp", "socket", "process", "memory_support",
@@ -208,7 +209,11 @@ def _backup_before_schema_upgrade():
     if not path.exists():
         return None
     version = _read_schema_version()
-    if version is not None and version >= 2:
+    if version is not None and version > SCHEMA_VERSION:
+        raise RuntimeError(
+            f"Database schema version {version} is newer than supported version {SCHEMA_VERSION}"
+        )
+    if version == SCHEMA_VERSION:
         return None
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -233,10 +238,11 @@ def init_db():
         conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_name ON cpus(name)")
         _migrate_name_key(conn)
-        conn.execute("""
-            INSERT INTO meta(key, value) VALUES('schema_version', '2')
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value
-        """)
+        conn.execute(
+            "INSERT INTO meta(key, value) VALUES('schema_version', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (str(SCHEMA_VERSION),),
+        )
         if migration_backup is not None:
             conn.execute(
                 "INSERT INTO meta(key, value) VALUES('last_migration_backup', ?) "
