@@ -119,9 +119,13 @@ export CPU_DATA_HOME="$HOME/.local/share/cpu-data-offline"
 | `CPU_UPDATE_BATCH_SIZE` | 100 | DBへ一括保存する件数 |
 | `CPU_NANOREVIEW_DELAY` | 0.5 | NanoReviewへのリクエスト間隔（秒） |
 
-## データ保存先
+## データ保存先・バックアップ
 
 既定のSQLiteファイルはプロジェクト直下の `data/cpu.db` です。`CPU_DATA_HOME` が設定されている場合はそちらを使用します。
+
+スキーマv2より古い既存DBを初期化・移行する前に、SQLiteのbackup APIで自動バックアップを作成します。ファイル名は `cpu.db.pre-v2-<UTC timestamp>.bak` 形式です。移行後はmetaテーブルの `last_migration_backup` に保存先を記録します。
+
+DB層には `backup_database(destination)` と `verify_database()` を用意しています。バックアップ先に既存ファイルがある場合は上書きせずエラーにします。
 
 ## テスト
 
