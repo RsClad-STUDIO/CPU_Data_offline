@@ -8,26 +8,42 @@ import time
 import datetime
 import requests
 from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from db import init_db, upsert_many, set_meta, count_cpus
 
 BASE_URL     = "https://www.cpubenchmark.net"
-CPU_LIST_URL = f"{BASE_URL}/cpu_list.php"
+CPU_LIST_URL = f"{BASE_URL}/cpu-list/all"
 NANOREVIEW   = "https://nanoreview.net/en/cpu"
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
+    "User-Agent": "CPU_Data_offline/1.0 (+https://github.com/RsClad-STUDIO/CPU_Data_offline)",
     "Accept-Language": "en-US,en;q=0.9",
 }
 
 
 # ── ユーティリティ ───────────────────────────────────────
 
+def _build_session():
+    retry = Retry(
+        total=3, connect=3, read=2, status=3, backoff_factor=0.5,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET"}),
+        respect_retry_after_header=True,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+SESSION = _build_session()
+
+
 def _get(url, timeout=20):
-    resp = requests.get(url, headers=HEADERS, timeout=timeout)
+    resp = SESSION.get(url, timeout=(5, timeout))
     resp.raise_for_status()
     return resp
 
@@ -63,19 +79,13 @@ def fetch_cpu_list() -> list:
     戻り値: [{"name": str, "passmark_score": int, "detail_url": str}, ...]
     """
     print(f"[Passmark] CPU一覧取得中: {CPU_LIST_URL}")
-    try:
-        resp = _get(CPU_LIST_URL, timeout=30)
-    except Exception as e:
-        print(f"[エラー] 一覧取得失敗: {e}")
-        return []
-
+    resp = _get(CPU_LIST_URL, timeout=30)
     soup    = BeautifulSoup(resp.text, "html.parser")
     table   = soup.find("table", id="cputable") or soup.find("table")
     results = []
 
     if not table:
-        print("[エラー] CPUテーブルが見つかりません")
-        return []
+        raise RuntimeError("PassMark CPU table was not found")
 
     for row in table.find_all("tr"):
         cols  = row.find_all("td")
@@ -98,7 +108,9 @@ def fetch_cpu_list() -> list:
         if name:
             results.append({"name": name, "passmark_score": score, "detail_url": durl})
 
-    print(f"[Passmark] {len(results)} 件取得")
+    if not results:
+        raise RuntimeError("PassMark CPU table contained no recognizable rows")
+    print(f"[PassMark] {len(results)} 件取得")
     return results
 
 
@@ -113,16 +125,14 @@ def fetch_nanoreview(slug: str) -> dict:
     try:
         resp = _get(url, timeout=12)
     except requests.HTTPError as e:
-        if e.response.status_code == 404:
+        if e.response is not None and e.response.status_code == 404:
             return {}
-        return {}
-    except Exception:
-        return {}
+        raise
 
     soup  = BeautifulSoup(resp.text, "html.parser")
     specs = {}
 
-    # UL > LI からキー:値を取得
+    # Compact lists near the page heading.
     for ul in soup.find_all("ul", class_="flex"):
         for li in ul.find_all("li"):
             text = li.get_text(" ", strip=True)
@@ -130,13 +140,29 @@ def fetch_nanoreview(slug: str) -> dict:
                 k, _, v = text.partition(":")
                 specs[k.strip().lower()] = v.strip()
 
-    # 説明文を取得（socket/threads/clock補完用）
+    # Specification tables (General / CPU / Package / Memory / iGPU).
+    for row in soup.find_all("tr"):
+        cells = row.find_all(["th", "td"], recursive=False)
+        if len(cells) >= 2:
+            key = re.sub(r"\\s+", " ", cells[0].get_text(" ", strip=True)).strip().lower()
+            value = cells[1].get_text(" ", strip=True)
+            if key and value:
+                specs[key] = value
+
+    # Description fallback for fields absent from table layouts.
     for div in soup.find_all("div", class_="card-block"):
-        cls = " ".join(div.get("class", []))
-        if "pb" in cls and "bt-light" in cls:
-            specs["_desc"] = div.get_text(" ", strip=True)
+        text = div.get_text(" ", strip=True)
+        if "threads" in text.lower() and "socket" in text.lower():
+            specs["_desc"] = text
             break
 
+    if "_desc" not in specs:
+        meta = soup.find("meta", attrs={"name": "description"})
+        if meta and meta.get("content"):
+            specs["_desc"] = meta["content"].strip()
+
+    if not specs:
+        raise RuntimeError("NanoReview page contained no recognizable specifications")
     return specs
 
 
@@ -144,51 +170,55 @@ def _parse_specs(name: str, specs: dict, passmark_url: str, score) -> dict:
     """nanoreviewの生スペックをDB用dictに正規化"""
     desc = specs.get("_desc", "")
 
-    # コア数
-    cores = specs.get("cores")
+    # CPU family / core count
+    family = specs.get("codename") or specs.get("architecture")
+    cores = specs.get("total cores") or specs.get("cores")
 
     # スレッド数（説明文から）
-    threads = None
-    m = re.search(r'(\d+)\s+threads?', desc, re.I)
-    if m:
-        threads = m.group(1)
+    threads = specs.get("total threads") or specs.get("threads")
+    if not threads:
+        m = re.search(r'(\d+)\s+threads?', desc, re.I)
+        if m:
+            threads = m.group(1)
 
     # ソケット（説明文から）
-    socket = None
-    m = re.search(r'socket\s+([\w\-]+)', desc, re.I)
-    if m:
-        socket = m.group(1)
+    socket = specs.get("socket")
+    if not socket:
+        m = re.search(r'socket\s+([\w\-]+)', desc, re.I)
+        if m:
+            socket = m.group(1)
 
     # ベースクロック（説明文から）
-    base_clock = None
-    m = re.search(r'base clock.*?is\s+([\d.]+\s*(?:GHz|MHz))', desc, re.I)
-    if m:
-        base_clock = m.group(1)
+    base_clock = specs.get("base frequency (p)") or specs.get("base frequency") or specs.get("base clock")
+    if not base_clock:
+        m = re.search(r'base clock.*?is\s+([\d.]+\s*(?:GHz|MHz))', desc, re.I)
+        if m:
+            base_clock = m.group(1)
 
     # ブーストクロック（説明文から）
-    boost_clock = None
-    m = re.search(r'up to\s+([\d.]+\s*(?:GHz|MHz))', desc, re.I)
-    if m:
-        boost_clock = m.group(1)
+    boost_clock = specs.get("turbo boost frequency (p)") or specs.get("turbo boost frequency") or specs.get("boost frequency")
+    if not boost_clock:
+        m = re.search(r'up to\s+([\d.]+\s*(?:GHz|MHz))', desc, re.I)
+        if m:
+            boost_clock = m.group(1)
 
     # TDP（先頭の数値+Wのみ）
     tdp = None
-    raw_tdp = specs.get("tdp", "")
+    raw_tdp = specs.get("tdp (pl1)") or specs.get("tdp", "")
     m = re.match(r'([\d.]+\s*W)', raw_tdp)
     if m:
         tdp = m.group(1)
 
     # 製造プロセス
-    process = specs.get("transistor size")
-
-    # L3キャッシュ
-    l3 = specs.get("l3 cache")
+    process = specs.get("fabrication process") or specs.get("transistor size")
+    memory_support = specs.get("memory types") or specs.get("memory support")
 
     # 内蔵GPU（説明文から）
-    igpu = None
-    m = re.search(r'integrated graphics\s+(.+?)\.', desc, re.I)
-    if m:
-        igpu = m.group(1).strip()
+    igpu = specs.get("integrated gpu") or specs.get("integrated graphics")
+    if not igpu:
+        m = re.search(r'integrated graphics\s+(.+?)(?:\.|$)', desc, re.I)
+        if m:
+            igpu = m.group(1).strip()
 
     slug      = _cpu_to_slug(name)
     nano_url  = f"{NANOREVIEW}/{slug}"
@@ -196,7 +226,7 @@ def _parse_specs(name: str, specs: dict, passmark_url: str, score) -> dict:
     return {
         "name":           name,
         "brand":          _brand(name),
-        "family":         l3,
+        "family":         family,
         "cores":          cores,
         "threads":        threads,
         "base_clock":     base_clock,
@@ -204,7 +234,7 @@ def _parse_specs(name: str, specs: dict, passmark_url: str, score) -> dict:
         "tdp":            tdp,
         "socket":         socket,
         "process":        process,
-        "memory_support": None,
+        "memory_support": memory_support,
         "igpu":           igpu,
         "passmark_score": score,
         "source_url":     nano_url,
