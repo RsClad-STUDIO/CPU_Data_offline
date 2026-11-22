@@ -89,9 +89,36 @@ tests/                            # DB・取得パーサー・互換性テスト
 
 初回起動時、DBが存在しない場合は高速更新を試みます。
 
+## 設定・データ保存先
+
+既定のSQLiteファイルはプロジェクト直下の `data/cpu.db` です。環境変数 `CPU_DATA_HOME` を指定すると、DBの保存先を任意のディレクトリへ変更できます。複数端末や自作サーバーで保存場所を統一する場合に利用します。
+
+Windows PowerShell:
+
+```powershell
+$env:CPU_DATA_HOME = "D:\\CPU_Data"
+```
+
+macOS / Linux:
+
+```bash
+export CPU_DATA_HOME="$HOME/.local/share/cpu-data-offline"
+```
+
+その他の調整可能な設定:
+
+| 環境変数 | 既定値 | 用途 |
+| --- | ---: | --- |
+| `CPU_HTTP_CONNECT_TIMEOUT` | 5 | HTTP接続タイムアウト（秒） |
+| `CPU_HTTP_READ_TIMEOUT` | 20 | HTTP読取タイムアウト（秒） |
+| `CPU_HTTP_RETRIES` | 3 | GET再試行回数 |
+| `CPU_HTTP_RETRY_BACKOFF` | 0.5 | 再試行の待機係数 |
+| `CPU_UPDATE_BATCH_SIZE` | 100 | DBへ一括保存する件数 |
+| `CPU_NANOREVIEW_DELAY` | 0.5 | NanoReviewへのリクエスト間隔（秒） |
+
 ## データ保存先
 
-既定のSQLiteファイルは `data/cpu.db` です。`db.py` の配置場所を基準に保存します。
+既定のSQLiteファイルはプロジェクト直下の `data/cpu.db` です。`CPU_DATA_HOME` が設定されている場合はそちらを使用します。
 
 ## テスト
 
