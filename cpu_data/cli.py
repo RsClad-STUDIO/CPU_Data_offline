@@ -202,6 +202,8 @@ def search_loop(initial_query: str = None):
             try:
                 from .updater import run_update
                 run_update(fast=False)
+            except KeyboardInterrupt:
+                print_info("更新を中断しました。保存済みのデータは保持されています。")
             except Exception as e:
                 print_error(f"更新失敗: {e}")
             continue
@@ -210,6 +212,8 @@ def search_loop(initial_query: str = None):
             try:
                 from .updater import run_update
                 run_update(fast=True)
+            except KeyboardInterrupt:
+                print_info("高速更新を中断しました。")
             except Exception as e:
                 print_error(f"更新失敗: {e}")
             continue
@@ -274,8 +278,12 @@ def main():
             sys.exit(1)
         return
 
-    if not ensure_db():
-        sys.exit(1)
+    try:
+        if not ensure_db():
+            sys.exit(1)
+    except KeyboardInterrupt:
+        print_info("初回セットアップを中断しました。")
+        sys.exit(130)
 
     search_loop(initial_query=args.query)
 
