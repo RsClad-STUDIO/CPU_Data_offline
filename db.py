@@ -14,10 +14,6 @@ CPU_COLUMNS = (
     "boost_clock", "tdp", "socket", "process", "memory_support",
     "igpu", "passmark_score", "source_url", "updated_at",
 )
-DETAIL_COLUMNS = {
-    "family", "cores", "threads", "base_clock", "boost_clock", "tdp",
-    "socket", "process", "memory_support", "igpu",
-}
 INSERT_COLUMNS = (
     "name", "name_key", "brand", "family", "cores", "threads",
     "base_clock", "boost_clock", "tdp", "socket", "process",
@@ -72,9 +68,21 @@ def _create_archive(conn):
     """)
 
 
+def _timestamp_key(value):
+    if not value:
+        return 0.0
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+
+
 def _completeness(row):
     count = sum(row[c] not in (None, "") for c in CPU_COLUMNS if c != "updated_at")
-    return count, row["updated_at"] or "", -int(row["id"])
+    return count, _timestamp_key(row["updated_at"]), -int(row["id"])
 
 
 def _merge(rows):
@@ -87,11 +95,11 @@ def _merge(rows):
                     merged[column] = row[column]
     scored = [r for r in rows if r["passmark_score"] is not None]
     if scored:
-        newest = max(scored, key=lambda r: (r["updated_at"] or "", -int(r["id"])))
+        newest = max(scored, key=lambda r: (_timestamp_key(r["updated_at"]), -int(r["id"])))
         merged["passmark_score"] = newest["passmark_score"]
     dates = [r["updated_at"] for r in rows if r["updated_at"]]
     if dates:
-        merged["updated_at"] = max(dates)
+        merged["updated_at"] = max(dates, key=_timestamp_key)
     return merged
 
 
