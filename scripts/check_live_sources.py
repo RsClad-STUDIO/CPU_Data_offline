@@ -1,7 +1,7 @@
 """Opt-in live smoke test for the configured CPU data sources.
 
-This script performs exactly one GET request to PassMark and one GET request
-to NanoReview. It does not read or modify the local database.
+This script performs one logical fetch per source (the shared HTTP retry policy
+may issue additional attempts). It does not read or modify the local database.
 Run from the repository root after installing the project dependencies:
 
     python scripts/check_live_sources.py
@@ -37,7 +37,7 @@ def main() -> int:
             f"PASS: parsed {len(cpus)} CPU rows; "
             f"matched {target['name']} (score={target['passmark_score']})"
         )
-    except Exception as error:  # Report network, HTTP, and parser failures together.
+    except Exception as error:
         failures.append(f"PassMark: {type(error).__name__}: {error}")
         print(f"FAIL: {failures[-1]}")
 
