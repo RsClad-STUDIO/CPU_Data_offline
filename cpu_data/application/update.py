@@ -6,6 +6,7 @@ from ..infrastructure.http import get as _get, HEADERS, SESSION
 from ..infrastructure.sources import passmark, nanoreview
 from ..infrastructure.sources.errors import DataSourceError, DataSourceParseError
 from ..config import SETTINGS
+from ..domain.cpu import CPURecord
 
 BATCH_SIZE = SETTINGS.update_batch_size
 REQUEST_DELAY_SECONDS = SETTINGS.nanoreview_delay
@@ -54,7 +55,7 @@ def run_update(fast: bool = False):
                 "passmark_score": item["passmark_score"],
                 "source_url": item["detail_url"],
             })
-        upsert_many(records)
+        upsert_many([CPURecord.from_mapping(record).to_mapping() for record in records])
         set_meta("last_updated", datetime.datetime.now().isoformat())
         set_meta("update_mode", "fast")
         print(f"[完了] {len(records)} 件をDBに保存しました（スコアのみ）")
@@ -83,7 +84,7 @@ def run_update(fast: bool = False):
     def flush_batch():
         nonlocal records
         if records:
-            upsert_many(records)
+            upsert_many([CPURecord.from_mapping(record).to_mapping() for record in records])
             set_meta("update_checkpoint", records[-1]["name"])
             records = []
 
