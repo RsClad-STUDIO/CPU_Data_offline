@@ -1,4 +1,5 @@
 import sqlite3
+import shutil
 import tempfile
 import unittest
 from contextlib import closing
@@ -88,6 +89,14 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(result, "ok")
         with closing(sqlite3.connect(backup_path)) as conn, conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM cpus").fetchone()[0], 1)
+
+        # Exercise the documented file-copy restore procedure on a separate DB.
+        restored_path = self.db_path.parent / "restored.db"
+        shutil.copy2(backup_path, restored_path)
+        with closing(sqlite3.connect(restored_path)) as restored, restored:
+            self.assertEqual(restored.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+            self.assertEqual(restored.execute("SELECT COUNT(*) FROM cpus").fetchone()[0], 1)
+
         with self.assertRaises(FileExistsError):
             db.backup_database(backup_path)
 
