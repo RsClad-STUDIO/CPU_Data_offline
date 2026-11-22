@@ -94,6 +94,22 @@ class UpdaterParserTests(unittest.TestCase):
             "intel-core-i5-4300u",
         )
 
+    def test_all_vendor_list_endpoint_and_vendor_classification(self):
+        self.assertTrue(updater.CPU_LIST_URL.endswith("/cpu-list/all"))
+        self.assertEqual(updater._brand("AMD Ryzen 9 7950X"), "AMD")
+        self.assertEqual(updater._brand("Apple M3 Max"), "Apple")
+        self.assertEqual(updater._brand("Qualcomm Snapdragon X Elite"), "Qualcomm")
+        self.assertEqual(updater._brand("AArch64"), "ARM")
+
+    def test_nanoreview_rejects_unrecognized_html(self):
+        with self.assertRaises(updater.DataSourceParseError):
+            updater._parse_nanoreview_html("<html><body>maintenance page</body></html>")
+
+    def test_passmark_network_error_propagates(self):
+        with patch.object(updater, "_get", side_effect=requests.ConnectionError("offline")):
+            with self.assertRaises(requests.ConnectionError):
+                updater.fetch_cpu_list()
+
 
 if __name__ == "__main__":
     unittest.main()
