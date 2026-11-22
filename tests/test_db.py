@@ -116,5 +116,18 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(db.count_cpus(), 1)
 
 
+    def test_future_schema_version_is_rejected_without_migration(self):
+        self.db_path.unlink()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            conn.execute(
+                "INSERT INTO meta(key, value) VALUES('schema_version', '3')"
+            )
+        with self.assertRaises(RuntimeError):
+            db.init_db()
+        backups = list(self.db_path.parent.glob("cpu.db.pre-v2-*.bak"))
+        self.assertEqual(backups, [])
+
+
 if __name__ == "__main__":
     unittest.main()
