@@ -62,9 +62,12 @@ cpu-data-update --full
 ```text
 cpu_data/
 ├─ __init__.py
+├─ config.py                      # OS別パス・実行時設定
 ├─ cli.py                         # CLI表示・入力
 ├─ database.py                    # 旧package import互換ラッパー
 ├─ updater.py                     # 旧package import / 起動互換ラッパー
+├─ domain/
+│  └─ cpu.py                      # CPURecord・データ不変条件
 ├─ application/
 │  └─ update.py                   # 更新ユースケース・チェックポイント
 └─ infrastructure/
