@@ -4,30 +4,10 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from ..http import get as _default_get
 from .errors import DataSourceParseError
+from ...domain.vendors import classify_vendor as _brand
 
 BASE_URL = "https://www.cpubenchmark.net"
 CPU_LIST_URL = f"{BASE_URL}/cpu-list/all"
-
-def _brand(name: str) -> str:
-    n = name.strip().lower()
-    if n.startswith("amd") or any(x in n for x in ("ryzen", "athlon", "threadripper", "epyc", "phenom", "sempron", "opteron")):
-        return "AMD"
-    if n.startswith("intel") or any(x in n for x in ("core", "pentium", "celeron", "xeon", "atom", "itanium")):
-        return "Intel"
-    if n.startswith("apple"):
-        return "Apple"
-    if n.startswith(("qualcomm", "snapdragon")):
-        return "Qualcomm"
-    if n.startswith(("arm ", "aarch64")):
-        return "ARM"
-    if n.startswith("nvidia"):
-        return "NVIDIA"
-    if n.startswith("mediatek"):
-        return "MediaTek"
-    if n.startswith("ampere"):
-        return "Ampere"
-    return "Unknown"
-
 
 def _parse_cpu_list_html(html: str) -> list:
     """Parse the all-vendor PassMark CPU list without making a network request."""
