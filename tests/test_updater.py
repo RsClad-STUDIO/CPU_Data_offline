@@ -94,6 +94,18 @@ class UpdaterParserTests(unittest.TestCase):
             "intel-core-i5-4300u",
         )
 
+    def test_prefers_full_integrated_graphics_name(self):
+        record = updater._parse_specs(
+            "Intel Core i7-13700K",
+            {
+                "integrated gpu": "UHD Graphics 770",
+                "integrated graphics": "Intel UHD Graphics 770",
+            },
+            "passmark-url",
+            45646,
+        )
+        self.assertEqual(record["igpu"], "Intel UHD Graphics 770")
+
     def test_all_vendor_list_endpoint_and_vendor_classification(self):
         self.assertTrue(updater.CPU_LIST_URL.endswith("/cpu-list/all"))
         self.assertEqual(updater._brand("AMD Ryzen 9 7950X"), "AMD")
