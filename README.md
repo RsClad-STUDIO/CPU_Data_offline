@@ -128,6 +128,20 @@ export CPU_DATA_HOME="$HOME/.local/share/cpu-data-offline"
 
 DB層には `backup_database(destination)` と `verify_database()` を用意しています。バックアップ先に既存ファイルがある場合は上書きせずエラーにします。
 
+### 手動復元手順
+
+現時点では復元専用コマンドはありません。バックアップから戻す場合は、必ずアプリを終了してから次の手順でファイルを差し替えてください。
+
+1. 現在の `cpu.db` を別の場所へコピーし、復旧前の状態も保全します。
+2. 復元する `.bak` ファイルを、実際に使用しているデータディレクトリの `cpu.db` としてコピーします。`CPU_DATA_HOME` を設定している場合は、そのディレクトリを対象にします。
+3. 復元したDBに対してSQLiteの整合性検査を実行します。
+
+```bash
+python -c "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); print(c.execute('PRAGMA integrity_check').fetchone()[0]); c.close()" "/path/to/cpu.db"
+```
+
+結果が `ok` であることを確認してからアプリを起動してください。問題があればアプリを起動せず、保全した復旧前DBへ戻してください。
+
 ## テスト
 
 標準ライブラリのunittestを使用します。
