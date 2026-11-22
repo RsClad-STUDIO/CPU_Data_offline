@@ -24,8 +24,11 @@ class CPURecord:
     def __post_init__(self):
         if not isinstance(self.name, str) or not self.name.strip():
             raise ValueError("CPU name must be a non-empty string")
-        if self.passmark_score is not None and self.passmark_score < 0:
-            raise ValueError("PassMark score must not be negative")
+        if self.passmark_score is not None:
+            if isinstance(self.passmark_score, bool) or not isinstance(self.passmark_score, int):
+                raise ValueError("PassMark score must be an integer or None")
+            if self.passmark_score < 0:
+                raise ValueError("PassMark score must not be negative")
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, Any]) -> "CPURecord":
@@ -34,6 +37,8 @@ class CPURecord:
             raise ValueError("CPU name must be a string")
         score = values.get("passmark_score")
         if score is not None:
+            if isinstance(score, bool):
+                raise ValueError("PassMark score must be an integer or None")
             try:
                 score = int(score)
             except (TypeError, ValueError) as error:
