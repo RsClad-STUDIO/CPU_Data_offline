@@ -5,6 +5,10 @@ from ..infrastructure.database import init_db, upsert_many, set_meta, get_meta, 
 from ..infrastructure.http import get as _get, HEADERS, SESSION
 from ..infrastructure.sources import passmark, nanoreview
 from ..infrastructure.sources.errors import DataSourceError, DataSourceParseError
+from ..config import SETTINGS
+
+BATCH_SIZE = SETTINGS.update_batch_size
+REQUEST_DELAY_SECONDS = SETTINGS.nanoreview_delay
 
 BASE_URL = passmark.BASE_URL
 CPU_LIST_URL = passmark.CPU_LIST_URL
@@ -118,9 +122,9 @@ def run_update(fast: bool = False):
                 }
 
             records.append(record)
-            if len(records) >= 100:
+            if len(records) >= BATCH_SIZE:
                 flush_batch()
-            time.sleep(0.5)
+            time.sleep(REQUEST_DELAY_SECONDS)
 
     except KeyboardInterrupt:
         flush_batch()
