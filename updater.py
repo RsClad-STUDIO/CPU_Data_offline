@@ -17,6 +17,10 @@ BASE_URL     = "https://www.cpubenchmark.net"
 CPU_LIST_URL = f"{BASE_URL}/cpu-list/all"
 NANOREVIEW   = "https://nanoreview.net/en/cpu"
 
+class DataSourceParseError(RuntimeError):
+    """Raised when a source response no longer matches the expected HTML structure."""
+
+
 HEADERS = {
     "User-Agent": "CPU_Data_offline/1.0 (+https://github.com/RsClad-STUDIO/CPU_Data_offline)",
     "Accept-Language": "en-US,en;q=0.9",
@@ -79,7 +83,7 @@ def _parse_cpu_list_html(html: str) -> list:
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", id="cputable") or soup.find("table")
     if table is None:
-        raise RuntimeError("PassMark CPU table was not found")
+        raise DataSourceParseError("PassMark CPU table was not found")
     results = []
     for row in table.find_all("tr"):
         cols = row.find_all("td")
@@ -100,7 +104,7 @@ def _parse_cpu_list_html(html: str) -> list:
             "detail_url": urljoin(BASE_URL + "/", anchor["href"].strip()),
         })
     if not results:
-        raise RuntimeError("PassMark CPU table contained no recognizable rows")
+        raise DataSourceParseError("PassMark CPU table contained no recognizable rows")
     return results
 
 
@@ -172,7 +176,7 @@ def _parse_nanoreview_html(html: str) -> dict:
         "tdp", "tdp (pl1)", "transistor size", "fabrication process",
     }
     if not known.intersection(specs) and not specs.get("_desc"):
-        raise RuntimeError("NanoReview page contained no recognizable specifications")
+        raise DataSourceParseError("NanoReview page contained no recognizable specifications")
     return specs
 
 def _parse_specs(name: str, specs: dict, passmark_url: str, score) -> dict:
