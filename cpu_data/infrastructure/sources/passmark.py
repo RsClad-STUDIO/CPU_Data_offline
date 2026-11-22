@@ -3,6 +3,7 @@ import re
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from ..http import get as _default_get
+from .errors import DataSourceParseError
 
 BASE_URL = "https://www.cpubenchmark.net"
 CPU_LIST_URL = f"{BASE_URL}/cpu-list/all"
