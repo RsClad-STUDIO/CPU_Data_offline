@@ -153,8 +153,69 @@ def _migrate_name_key(conn):
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_cpus_name_key ON cpus(name_key)")
 
 
+def backup_database(destination) -> Path:
+    """Create a consistent SQLite backup without overwriting an existing file."""
+    target = Path(destination).expanduser().resolve()
+    source_path = Path(DB_PATH).expanduser().resolve()
+    if target == source_path:
+        raise ValueError("Backup destination must differ from the active database")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        raise FileExistsError(target)
+
+    with _connection() as source:
+        destination_connection = sqlite3.connect(target)
+        try:
+            source.backup(destination_connection)
+        finally:
+            destination_connection.close()
+    return target
+
+
+def verify_database() -> tuple[bool, str]:
+    """Run SQLite's integrity_check and return (is_valid, result_text)."""
+    with _connection() as conn:
+        result = conn.execute("PRAGMA integrity_check").fetchone()[0]
+    return result == "ok", result
+
+
+def _read_schema_version():
+    path = Path(DB_PATH)
+    if not path.exists():
+        return None
+    with sqlite3.connect(path) as conn:
+        has_meta = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'"
+        ).fetchone()
+        if not has_meta:
+            return None
+        row = conn.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'"
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            return int(row[0])
+        except (TypeError, ValueError):
+            return None
+
+
+def _backup_before_schema_upgrade():
+    path = Path(DB_PATH)
+    if not path.exists():
+        return None
+    version = _read_schema_version()
+    if version is not None and version >= 2:
+        return None
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    destination = path.with_name(f"{path.name}.pre-v2-{timestamp}.bak")
+    return backup_database(destination)
+
+
 def init_db():
     """Create tables and apply an idempotent, data-preserving migration."""
+    migration_backup = _backup_before_schema_upgrade()
     with _connection() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS cpus (
@@ -173,6 +234,12 @@ def init_db():
             INSERT INTO meta(key, value) VALUES('schema_version', '2')
             ON CONFLICT(key) DO UPDATE SET value = excluded.value
         """)
+        if migration_backup is not None:
+            conn.execute(
+                "INSERT INTO meta(key, value) VALUES('last_migration_backup', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (str(migration_backup),),
+            )
 
 
 def search_cpus(query: str, limit: int = 20):
