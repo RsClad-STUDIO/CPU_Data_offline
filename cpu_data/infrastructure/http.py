@@ -34,7 +34,7 @@ def build_session():
 SESSION = build_session()
 
 
-def get(url, timeout=20):
+def get(url, timeout=None):
     try:
         response = SESSION.get(
             url,
