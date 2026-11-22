@@ -379,7 +379,7 @@ def run_update(fast: bool = False):
     set_meta("update_mode", "full")
     set_meta("update_in_progress", "false")
     set_meta("update_checkpoint", "")
-    print(f"\\n[完了] 合計 {count_cpus()} 件保存 (今回のスペック取得: {hit}, 404: {miss})")
+    print(f"\n[完了] 合計 {count_cpus()} 件保存 (今回のスペック取得: {hit}, 404: {miss})")
 
 
 if __name__ == "__main__":
