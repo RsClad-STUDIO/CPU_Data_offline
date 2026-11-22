@@ -4,6 +4,7 @@ import time
 from ..infrastructure.database import init_db, upsert_many, set_meta, get_meta, count_cpus
 from ..infrastructure.http import get as _get, HEADERS, SESSION
 from ..infrastructure.sources import passmark, nanoreview
+from ..infrastructure.sources.errors import DataSourceError, DataSourceParseError
 
 BASE_URL = passmark.BASE_URL
 CPU_LIST_URL = passmark.CPU_LIST_URL
