@@ -110,6 +110,50 @@ class UpdaterParserTests(unittest.TestCase):
             with self.assertRaises(requests.ConnectionError):
                 updater.fetch_cpu_list()
 
+    def test_interruption_flushes_processed_records_and_checkpoint(self):
+        items = [
+            {"name": "Intel Core i5-1", "passmark_score": 100, "detail_url": "passmark-1"},
+            {"name": "Intel Core i5-2", "passmark_score": 200, "detail_url": "passmark-2"},
+        ]
+        meta = {"update_in_progress": "false"}
+        with patch.object(updater, "init_db"), \
+             patch.object(updater, "fetch_cpu_list", return_value=items), \
+             patch.object(updater, "get_meta", side_effect=lambda key: meta.get(key)), \
+             patch.object(updater, "set_meta") as set_meta, \
+             patch.object(updater, "upsert_many") as upsert_many, \
+             patch.object(updater, "fetch_nanoreview", side_effect=[{"cores": "4"}, requests.ConnectionError("offline")]), \
+             patch.object(updater.time, "sleep"):
+            with self.assertRaises(requests.ConnectionError):
+                updater.run_update()
+
+        saved = upsert_many.call_args.args[0]
+        self.assertEqual([row["name"] for row in saved], ["Intel Core i5-1"])
+        set_meta.assert_any_call("update_checkpoint", "Intel Core i5-1")
+        set_meta.assert_any_call("update_in_progress", "true")
+
+    def test_full_update_resumes_after_last_checkpoint(self):
+        items = [
+            {"name": "Intel Core i5-1", "passmark_score": 100, "detail_url": "passmark-1"},
+            {"name": "Intel Core i5-2", "passmark_score": 200, "detail_url": "passmark-2"},
+            {"name": "Intel Core i5-3", "passmark_score": 300, "detail_url": "passmark-3"},
+        ]
+        meta = {"update_in_progress": "true", "update_checkpoint": "Intel Core i5-2"}
+        with patch.object(updater, "init_db"), \
+             patch.object(updater, "fetch_cpu_list", return_value=items), \
+             patch.object(updater, "get_meta", side_effect=lambda key: meta.get(key)), \
+             patch.object(updater, "set_meta") as set_meta, \
+             patch.object(updater, "upsert_many") as upsert_many, \
+             patch.object(updater, "fetch_nanoreview", return_value={}) as fetch_nano, \
+             patch.object(updater, "count_cpus", return_value=3), \
+             patch.object(updater.time, "sleep"):
+            updater.run_update()
+
+        fetch_nano.assert_called_once_with(updater._cpu_to_slug("Intel Core i5-3"))
+        saved = upsert_many.call_args.args[0]
+        self.assertEqual([row["name"] for row in saved], ["Intel Core i5-3"])
+        set_meta.assert_any_call("update_in_progress", "false")
+        set_meta.assert_any_call("update_checkpoint", "")
+
 
 if __name__ == "__main__":
     unittest.main()
