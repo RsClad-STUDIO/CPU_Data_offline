@@ -135,7 +135,7 @@ def _parse_specs(name: str, specs: dict, passmark_url: str, score) -> dict:
     memory_support = specs.get("memory types") or specs.get("memory support")
 
     # 内蔵GPU（説明文から）
-    igpu = specs.get("integrated gpu") or specs.get("integrated graphics")
+    igpu = specs.get("integrated graphics") or specs.get("integrated gpu")
     if not igpu:
         m = re.search(r'integrated graphics\s+(.+?)(?:\.|$)', desc, re.I)
         if m:
