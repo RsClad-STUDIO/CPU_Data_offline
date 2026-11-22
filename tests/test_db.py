@@ -1,6 +1,7 @@
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 import db
@@ -42,7 +43,7 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(db.search_cpus("%"), [])
 
     def test_legacy_duplicates_are_merged_and_archived(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("DROP TABLE cpus")
             conn.execute("""CREATE TABLE cpus (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
@@ -65,12 +66,12 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(row["base_clock"], "3.4 GHz")
         self.assertEqual(row["process"], "10 nm")
         self.assertEqual(row["passmark_score"], 46000)
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM cpus_duplicate_archive").fetchone()[0], 1)
 
         db.init_db()
         self.assertEqual(db.count_cpus(), 1)
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM cpus_duplicate_archive").fetchone()[0], 1)
 
     def test_metadata_round_trip(self):
@@ -92,7 +93,7 @@ class DatabaseTests(unittest.TestCase):
 
     def test_legacy_database_is_backed_up_before_migration(self):
         self.db_path.unlink()
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("""
                 CREATE TABLE cpus (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
@@ -118,7 +119,7 @@ class DatabaseTests(unittest.TestCase):
 
     def test_future_schema_version_is_rejected_without_migration(self):
         self.db_path.unlink()
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             conn.execute(
                 "INSERT INTO meta(key, value) VALUES('schema_version', '3')"
