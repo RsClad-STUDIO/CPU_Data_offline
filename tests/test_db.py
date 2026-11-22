@@ -86,7 +86,7 @@ class DatabaseTests(unittest.TestCase):
         valid, result = db.verify_database()
         self.assertTrue(valid)
         self.assertEqual(result, "ok")
-        with sqlite3.connect(backup_path) as conn:
+        with closing(sqlite3.connect(backup_path)) as conn, conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM cpus").fetchone()[0], 1)
         with self.assertRaises(FileExistsError):
             db.backup_database(backup_path)
@@ -111,7 +111,7 @@ class DatabaseTests(unittest.TestCase):
         db.init_db()
         backups = list(self.db_path.parent.glob("cpu.db.pre-v2-*.bak"))
         self.assertEqual(len(backups), 1)
-        with sqlite3.connect(backups[0]) as conn:
+        with closing(sqlite3.connect(backups[0])) as conn, conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM cpus").fetchone()[0], 1)
         self.assertEqual(db.get_meta("last_migration_backup"), str(backups[0].resolve()))
         self.assertEqual(db.count_cpus(), 1)
