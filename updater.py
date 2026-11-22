@@ -150,7 +150,7 @@ def _parse_nanoreview_html(html: str) -> dict:
     for term in soup.find_all("dt"):
         definition = term.find_next_sibling("dd")
         if definition is not None:
-            key = re.sub(r"\\s+", " ", term.get_text(" ", strip=True)).strip().lower()
+            key = re.sub(r"\s+", " ", term.get_text(" ", strip=True)).strip().lower()
             value = definition.get_text(" ", strip=True)
             if key and value:
                 specs[key] = value
