@@ -1,6 +1,6 @@
 """
 updater.py - CPUデータの取得・更新
-  STEP1: Passmark /cpu_list.php  → CPU名 + スコア + 詳細URL
+  STEP1: PassMark /cpu-list/all  → CPU名 + スコア + 詳細URL
   STEP2: nanoreview.net          → 各CPUの詳細スペック
 """
 import re
@@ -92,7 +92,7 @@ def _parse_cpu_list_html(html: str) -> list:
         if not name:
             continue
         score_text = cols[1].get_text(" ", strip=True)
-        match = re.search(r"[\\d,]+", score_text)
+        match = re.search(r"[\d,]+", score_text)
         score = int(match.group(0).replace(",", "")) if match else None
         results.append({
             "name": name,
@@ -142,7 +142,7 @@ def _parse_nanoreview_html(html: str) -> dict:
     for row in soup.find_all("tr"):
         cells = row.find_all(["th", "td"], recursive=False)
         if len(cells) >= 2:
-            key = re.sub(r"\\s+", " ", cells[0].get_text(" ", strip=True)).strip().lower()
+            key = re.sub(r"\s+", " ", cells[0].get_text(" ", strip=True)).strip().lower()
             value = cells[1].get_text(" ", strip=True)
             if key and value:
                 specs[key] = value
