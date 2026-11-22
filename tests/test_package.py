@@ -1,0 +1,24 @@
+import unittest
+from pathlib import Path
+
+import db
+import updater
+from cpu_data import database, updater as packaged_updater
+from cpu_data.cli import main as cli_main
+
+
+class PackageCompatibilityTests(unittest.TestCase):
+    def test_legacy_module_names_are_true_module_aliases(self):
+        self.assertIs(db, database)
+        self.assertIs(updater, packaged_updater)
+
+    def test_default_database_path_remains_at_project_root(self):
+        expected = Path(__file__).resolve().parents[1] / "data" / "cpu.db"
+        self.assertEqual(Path(database.DB_PATH), expected)
+
+    def test_cli_entry_point_is_importable(self):
+        self.assertTrue(callable(cli_main))
+
+
+if __name__ == "__main__":
+    unittest.main()
