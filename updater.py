@@ -11,7 +11,7 @@ import requests
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from db import init_db, upsert_many, set_meta, count_cpus
+from db import init_db, upsert_many, set_meta, get_meta, count_cpus
 
 BASE_URL     = "https://www.cpubenchmark.net"
 CPU_LIST_URL = f"{BASE_URL}/cpu-list/all"
@@ -269,36 +269,30 @@ def _parse_specs(name: str, specs: dict, passmark_url: str, score) -> dict:
 # ── メイン更新処理 ────────────────────────────────────────
 
 def run_update(fast: bool = False):
-    """
-    fast=True  : Passmark一覧のみ（スコア+名前）→ 数分
-    fast=False : Passmark一覧 + nanoreviewスペック → 数時間
-    """
+    """Run a safe update with resumable checkpoints for full specification scans."""
     init_db()
-
-    # STEP1: Passmark一覧
     cpu_list = fetch_cpu_list()
     if not cpu_list:
-        print("[中止] CPUリストが取得できませんでした。ネット接続を確認してください。")
-        return
+        raise RuntimeError("PassMark returned an empty CPU list")
 
     if fast:
         records = []
         for item in cpu_list:
             records.append({
-                "name":           item["name"],
-                "brand":          _brand(item["name"]),
-                "family":         None,
-                "cores":          None,
-                "threads":        None,
-                "base_clock":     None,
-                "boost_clock":    None,
-                "tdp":            None,
-                "socket":         None,
-                "process":        None,
+                "name": item["name"],
+                "brand": _brand(item["name"]),
+                "family": None,
+                "cores": None,
+                "threads": None,
+                "base_clock": None,
+                "boost_clock": None,
+                "tdp": None,
+                "socket": None,
+                "process": None,
                 "memory_support": None,
-                "igpu":           None,
+                "igpu": None,
                 "passmark_score": item["passmark_score"],
-                "source_url":     item["detail_url"],
+                "source_url": item["detail_url"],
             })
         upsert_many(records)
         set_meta("last_updated", datetime.datetime.now().isoformat())
@@ -307,59 +301,82 @@ def run_update(fast: bool = False):
         print("詳細スペックを取得するには: python cpu_lookup.py --update")
         return
 
-    # STEP2: nanoreviewスペック取得
-    total   = len(cpu_list)
-    records = []
-    hit     = 0
-    miss    = 0
-
-    print(f"[nanoreview] 詳細スペック取得開始 ({total} 件)")
-    print("  ※ 404のCPUはスコアのみ保存。Ctrl+C で中断→再開可能。")
-
-    for i, item in enumerate(cpu_list, 1):
-        if i % 100 == 0:
-            print(f"  {i}/{total} 件処理中... (取得成功: {hit}, 404スキップ: {miss})")
-
-        slug  = _cpu_to_slug(item["name"])
-        specs = fetch_nanoreview(slug)
-
-        if specs:
-            hit += 1
-            rec = _parse_specs(item["name"], specs, item["detail_url"], item["passmark_score"])
+    resume = get_meta("update_in_progress") == "true"
+    checkpoint = get_meta("update_checkpoint") if resume else None
+    start_index = 0
+    if checkpoint:
+        positions = [i for i, item in enumerate(cpu_list) if item["name"] == checkpoint]
+        if positions:
+            start_index = positions[-1] + 1
+            print(f"[再開] {checkpoint} の次のCPUから処理します。")
         else:
-            miss += 1
-            rec = {
-                "name":           item["name"],
-                "brand":          _brand(item["name"]),
-                "family":         None,
-                "cores":          None,
-                "threads":        None,
-                "base_clock":     None,
-                "boost_clock":    None,
-                "tdp":            None,
-                "socket":         None,
-                "process":        None,
-                "memory_support": None,
-                "igpu":           None,
-                "passmark_score": item["passmark_score"],
-                "source_url":     item["detail_url"],
-            }
+            print("[注意] 前回のチェックポイントが一覧にないため、先頭から再処理します。")
 
-        records.append(rec)
+    set_meta("update_in_progress", "true")
+    records = []
+    hit = 0
+    miss = 0
 
-        # 100件ごとに中間保存
-        if len(records) >= 100:
+    def flush_batch():
+        nonlocal records
+        if records:
             upsert_many(records)
+            set_meta("update_checkpoint", records[-1]["name"])
             records = []
 
-        time.sleep(0.5)
+    total = len(cpu_list)
+    print(f"[NanoReview] 詳細スペック取得開始 ({total} 件)")
+    print("  ※ 404はスコアのみ保存。通信障害・解析失敗時は中断し、次回はチェックポイントから再開します。")
 
-    if records:
-        upsert_many(records)
+    try:
+        for index, item in enumerate(cpu_list[start_index:], start=start_index + 1):
+            if index % 100 == 0:
+                print(f"  {index}/{total} 件処理中... (取得成功: {hit}, 404: {miss})")
 
+            specs = fetch_nanoreview(_cpu_to_slug(item["name"]))
+            if specs:
+                hit += 1
+                record = _parse_specs(
+                    item["name"], specs, item["detail_url"], item["passmark_score"]
+                )
+            else:
+                miss += 1
+                record = {
+                    "name": item["name"],
+                    "brand": _brand(item["name"]),
+                    "family": None,
+                    "cores": None,
+                    "threads": None,
+                    "base_clock": None,
+                    "boost_clock": None,
+                    "tdp": None,
+                    "socket": None,
+                    "process": None,
+                    "memory_support": None,
+                    "igpu": None,
+                    "passmark_score": item["passmark_score"],
+                    "source_url": item["detail_url"],
+                }
+
+            records.append(record)
+            if len(records) >= 100:
+                flush_batch()
+            time.sleep(0.5)
+
+    except KeyboardInterrupt:
+        flush_batch()
+        print("[中断] 処理済みデータを保存しました。次回の完全更新で続きから再開します。")
+        raise
+    except Exception:
+        flush_batch()
+        raise
+
+    flush_batch()
     set_meta("last_updated", datetime.datetime.now().isoformat())
     set_meta("update_mode", "full")
-    print(f"\n[完了] 合計 {count_cpus()} 件保存 (スペック取得: {hit}, スコアのみ: {miss})")
+    set_meta("update_in_progress", "false")
+    set_meta("update_checkpoint", "")
+    print(f"\\n[完了] 合計 {count_cpus()} 件保存 (今回のスペック取得: {hit}, 404: {miss})")
 
 
 if __name__ == "__main__":
