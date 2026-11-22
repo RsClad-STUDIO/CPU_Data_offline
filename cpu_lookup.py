@@ -257,13 +257,21 @@ def main():
         epilog=__doc__,
     )
     parser.add_argument("query", nargs="?", help="検索するCPU型番")
-    parser.add_argument("--update", action="store_true", help="データを完全更新")
-    parser.add_argument("--fast",   action="store_true", help="高速更新（Passmarkのみ）")
+    update_group = parser.add_mutually_exclusive_group()
+    update_group.add_argument("--update", action="store_true", help="データを完全更新")
+    update_group.add_argument("--fast", action="store_true", help="高速更新（PassMarkのみ）")
     args = parser.parse_args()
 
     if args.update or args.fast:
         from updater import run_update
-        run_update(fast=args.fast)
+        try:
+            run_update(fast=args.fast)
+        except KeyboardInterrupt:
+            print_info("更新を中断しました。保存済みのデータは保持されています。")
+            sys.exit(130)
+        except Exception as e:
+            print_error(f"更新失敗: {e}")
+            sys.exit(1)
         return
 
     if not ensure_db():
