@@ -3,6 +3,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from .sources.errors import DataSourceError
+
 HEADERS = {
     "User-Agent": "CPU_Data_offline/1.0 (+https://github.com/RsClad-STUDIO/CPU_Data_offline)",
     "Accept-Language": "en-US,en;q=0.9",
@@ -28,6 +30,12 @@ SESSION = build_session()
 
 
 def get(url, timeout=20):
-    response = SESSION.get(url, timeout=(5, timeout))
-    response.raise_for_status()
-    return response
+    try:
+        response = SESSION.get(url, timeout=(5, timeout))
+        response.raise_for_status()
+        return response
+    except requests.HTTPError:
+        # Preserve HTTP status so callers can distinguish a legitimate 404.
+        raise
+    except requests.RequestException as error:
+        raise DataSourceError(f"HTTP request failed for {url}: {error}") from error
