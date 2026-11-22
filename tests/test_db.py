@@ -78,5 +78,43 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(db.get_meta("last_updated"), "2026-11-23")
 
 
+    def test_backup_and_integrity_check(self):
+        db.upsert_cpu({"name": "Test CPU", "passmark_score": 1234})
+        backup_path = self.db_path.parent / "backup.db"
+        self.assertEqual(db.backup_database(backup_path), backup_path.resolve())
+        valid, result = db.verify_database()
+        self.assertTrue(valid)
+        self.assertEqual(result, "ok")
+        with sqlite3.connect(backup_path) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM cpus").fetchone()[0], 1)
+        with self.assertRaises(FileExistsError):
+            db.backup_database(backup_path)
+
+    def test_legacy_database_is_backed_up_before_migration(self):
+        self.db_path.unlink()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE cpus (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+                    brand TEXT, family TEXT, cores TEXT, threads TEXT,
+                    base_clock TEXT, boost_clock TEXT, tdp TEXT, socket TEXT,
+                    process TEXT, memory_support TEXT, igpu TEXT,
+                    passmark_score INTEGER, source_url TEXT, updated_at TEXT
+                )
+            """)
+            conn.execute(
+                "INSERT INTO cpus(name, brand, passmark_score) VALUES(?,?,?)",
+                ("Intel Core i5-12400", "Intel", 18000),
+            )
+
+        db.init_db()
+        backups = list(self.db_path.parent.glob("cpu.db.pre-v2-*.bak"))
+        self.assertEqual(len(backups), 1)
+        with sqlite3.connect(backups[0]) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM cpus").fetchone()[0], 1)
+        self.assertEqual(db.get_meta("last_migration_backup"), str(backups[0].resolve()))
+        self.assertEqual(db.count_cpus(), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
