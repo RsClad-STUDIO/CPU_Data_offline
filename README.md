@@ -67,7 +67,8 @@ cpu_data/
 ├─ database.py                    # 旧package import互換ラッパー
 ├─ updater.py                     # 旧package import / 起動互換ラッパー
 ├─ domain/
-│  └─ cpu.py                      # CPURecord・データ不変条件
+│  ├─ cpu.py                      # CPURecord・データ不変条件
+│  └─ vendors.py                  # メーカー分類ルール
 ├─ application/
 │  └─ update.py                   # 更新ユースケース・チェックポイント
 └─ infrastructure/
