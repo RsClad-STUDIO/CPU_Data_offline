@@ -144,7 +144,7 @@ def fetch_nanoreview(slug: str) -> dict:
     for row in soup.find_all("tr"):
         cells = row.find_all(["th", "td"], recursive=False)
         if len(cells) >= 2:
-            key = re.sub(r"\\s+", " ", cells[0].get_text(" ", strip=True)).strip().lower()
+            key = re.sub(r"\s+", " ", cells[0].get_text(" ", strip=True)).strip().lower()
             value = cells[1].get_text(" ", strip=True)
             if key and value:
                 specs[key] = value
