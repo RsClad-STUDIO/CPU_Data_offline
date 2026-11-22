@@ -8,8 +8,10 @@ import re
 import sqlite3
 import unicodedata
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DB_PATH = os.path.join(PROJECT_ROOT, "data", "cpu.db")
+from ..config import SETTINGS
+
+PROJECT_ROOT = os.fspath(SETTINGS.project_root)
+DB_PATH = SETTINGS.db_path
 CPU_COLUMNS = (
     "name", "brand", "family", "cores", "threads", "base_clock",
     "boost_clock", "tdp", "socket", "process", "memory_support",
