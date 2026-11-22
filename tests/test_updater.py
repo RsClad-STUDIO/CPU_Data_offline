@@ -110,6 +110,18 @@ class UpdaterParserTests(unittest.TestCase):
             with self.assertRaises(requests.ConnectionError):
                 updater.fetch_cpu_list()
 
+    def test_http_client_wraps_network_errors_but_preserves_status_errors(self):
+        with patch.object(updater.SESSION, "get", side_effect=requests.ConnectionError("offline")):
+            with self.assertRaises(updater.DataSourceError):
+                updater._get("https://example.invalid")
+
+        response = requests.Response()
+        response.status_code = 404
+        response.url = "https://example.invalid/not-found"
+        with patch.object(updater.SESSION, "get", return_value=response):
+            with self.assertRaises(requests.HTTPError):
+                updater._get(response.url)
+
     def test_interruption_flushes_processed_records_and_checkpoint(self):
         items = [
             {"name": "Intel Core i5-1", "passmark_score": 100, "detail_url": "passmark-1"},
