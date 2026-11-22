@@ -29,7 +29,7 @@ Windows PowerShell:
 
 ```powershell
 .venv\\Scripts\\Activate.ps1
-python -m pip install -r requirements.txt
+python -m pip install -e .
 ```
 
 macOS / Linux:
@@ -47,6 +47,32 @@ python cpu_lookup.py "i7-13700K"
 python cpu_lookup.py --fast
 python cpu_lookup.py --update
 ```
+
+パッケージをインストールした場合は、以下のコマンドも利用できます。
+
+```bash
+cpu-lookup
+cpu-lookup "i7-13700K"
+cpu-data-update --fast
+cpu-data-update --full
+```
+
+## ソース構成
+
+```text
+cpu_data/
+├─ __init__.py
+├─ cli.py        # CLI表示・入力
+├─ updater.py    # 更新フロー・外部データ取得
+└─ database.py  # SQLite永続化
+
+cpu_lookup.py    # 旧CLI起動パス互換ラッパー
+db.py            # 旧DB import互換ラッパー
+updater.py       # 旧更新 import / 起動パス互換ラッパー
+tests/           # DB・取得パーサー・互換性テスト
+```
+
+既存の `python cpu_lookup.py`、`import db`、`import updater` は互換ラッパー経由で維持します。SQLiteファイルの既定位置もプロジェクト直下の `data/cpu.db` のままです。
 
 - 通常起動：対話検索
 - `--fast`：PassMark一覧のみを更新
