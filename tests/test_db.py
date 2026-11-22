@@ -3,6 +3,7 @@ import shutil
 import tempfile
 import unittest
 from contextlib import closing
+from unittest.mock import patch
 from pathlib import Path
 
 import db
@@ -124,6 +125,27 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM cpus").fetchone()[0], 1)
         self.assertEqual(db.get_meta("last_migration_backup"), str(backups[0].resolve()))
         self.assertEqual(db.count_cpus(), 1)
+
+
+    def test_migration_aborts_when_backup_fails(self):
+        self.db_path.unlink()
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute(
+                "CREATE TABLE cpus (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)"
+            )
+            conn.execute("INSERT INTO cpus(name) VALUES(?)", ("Preserve me",))
+
+        with patch.object(db, "backup_database", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                db.init_db()
+
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(cpus)")}
+            self.assertNotIn("name_key", columns)
+            self.assertEqual(
+                conn.execute("SELECT name FROM cpus").fetchone()[0],
+                "Preserve me",
+            )
 
 
     def test_future_schema_version_is_rejected_without_migration(self):
