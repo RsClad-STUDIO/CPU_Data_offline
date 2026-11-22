@@ -1,0 +1,43 @@
+import unittest
+from pathlib import Path
+
+from cpu_data.config import PROJECT_ROOT, load_settings
+
+
+class SettingsTests(unittest.TestCase):
+    def test_default_data_location_stays_in_project_data_directory(self):
+        settings = load_settings({})
+        self.assertEqual(settings.data_dir, (PROJECT_ROOT / "data").resolve())
+        self.assertEqual(settings.db_path, (PROJECT_ROOT / "data" / "cpu.db").resolve())
+
+    def test_relative_data_home_is_resolved_from_project_root(self):
+        settings = load_settings({"CPU_DATA_HOME": "custom-data"})
+        self.assertEqual(settings.data_dir, (PROJECT_ROOT / "custom-data").resolve())
+        self.assertEqual(settings.db_path.name, "cpu.db")
+
+    def test_runtime_settings_can_be_overridden(self):
+        settings = load_settings({
+            "CPU_DATA_HOME": str(Path.home() / "cpu-data-test"),
+            "CPU_HTTP_CONNECT_TIMEOUT": "8",
+            "CPU_HTTP_READ_TIMEOUT": "45",
+            "CPU_HTTP_RETRIES": "5",
+            "CPU_HTTP_RETRY_BACKOFF": "1.25",
+            "CPU_UPDATE_BATCH_SIZE": "50",
+            "CPU_NANOREVIEW_DELAY": "0.75",
+        })
+        self.assertEqual(settings.http_connect_timeout, 8)
+        self.assertEqual(settings.http_read_timeout, 45)
+        self.assertEqual(settings.http_retries, 5)
+        self.assertEqual(settings.retry_backoff, 1.25)
+        self.assertEqual(settings.update_batch_size, 50)
+        self.assertEqual(settings.nanoreview_delay, 0.75)
+
+    def test_invalid_values_are_rejected(self):
+        with self.assertRaises(ValueError):
+            load_settings({"CPU_UPDATE_BATCH_SIZE": "0"})
+        with self.assertRaises(ValueError):
+            load_settings({"CPU_NANOREVIEW_DELAY": "-1"})
+
+
+if __name__ == "__main__":
+    unittest.main()
