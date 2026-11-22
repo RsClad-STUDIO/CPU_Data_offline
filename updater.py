@@ -303,6 +303,8 @@ def run_update(fast: bool = False):
 
     resume = get_meta("update_in_progress") == "true"
     checkpoint = get_meta("update_checkpoint") if resume else None
+    if not resume:
+        set_meta("update_checkpoint", "")
     start_index = 0
     if checkpoint:
         positions = [i for i, item in enumerate(cpu_list) if item["name"] == checkpoint]
@@ -311,6 +313,7 @@ def run_update(fast: bool = False):
             print(f"[再開] {checkpoint} の次のCPUから処理します。")
         else:
             print("[注意] 前回のチェックポイントが一覧にないため、先頭から再処理します。")
+            set_meta("update_checkpoint", "")
 
     set_meta("update_in_progress", "true")
     records = []
