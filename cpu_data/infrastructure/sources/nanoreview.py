@@ -79,7 +79,7 @@ def fetch_nanoreview(slug: str, get=_default_get) -> dict:
     """Fetch specifications. Only HTTP 404 is treated as a legitimate miss."""
     url = f"{NANOREVIEW}/{slug}"
     try:
-        response = get(url, timeout=12)
+        response = get(url)
     except requests.HTTPError as error:
         if error.response is not None and error.response.status_code == 404:
             return {}
