@@ -11,3 +11,6 @@ dist/
 data/cpu.db
 data/cpu.db-shm
 data/cpu.db-wal
+
+data/*.bak
+data/*.db.pre-v2-*.bak
