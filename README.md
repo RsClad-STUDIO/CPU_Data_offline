@@ -28,7 +28,7 @@ python -m venv .venv
 Windows PowerShell:
 
 ```powershell
-.venv\\Scripts\\Activate.ps1
+.venv\Scripts\Activate.ps1
 python -m pip install -e .
 ```
 
@@ -36,7 +36,7 @@ macOS / Linux:
 
 ```bash
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install -e .
 ```
 
 ## 起動
