@@ -1,6 +1,7 @@
 import unittest
 
 from cpu_data.domain.cpu import CPURecord
+from cpu_data.domain.vendors import classify_vendor
 
 
 class CPURecordTests(unittest.TestCase):
@@ -32,6 +33,15 @@ class CPURecordTests(unittest.TestCase):
             CPURecord.from_mapping({"name": "CPU", "passmark_score": -1})
         with self.assertRaises(ValueError):
             CPURecord.from_mapping({"name": "CPU", "passmark_score": True})
+
+
+    def test_vendor_classification_is_shared_and_explicit(self):
+        self.assertEqual(classify_vendor("AMD Ryzen 9 7950X"), "AMD")
+        self.assertEqual(classify_vendor("Intel Core i7-13700K"), "Intel")
+        self.assertEqual(classify_vendor("Apple M3 Max"), "Apple")
+        self.assertEqual(classify_vendor("Qualcomm Snapdragon X Elite"), "Qualcomm")
+        self.assertEqual(classify_vendor("AArch64"), "ARM")
+        self.assertEqual(classify_vendor("Unlisted CPU Vendor"), "Unknown")
 
 
 if __name__ == "__main__":
