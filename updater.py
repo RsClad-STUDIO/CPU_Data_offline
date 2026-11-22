@@ -6,6 +6,7 @@ updater.py - CPUデータの取得・更新
 import re
 import time
 import datetime
+from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
@@ -73,83 +74,87 @@ def _cpu_to_slug(name: str) -> str:
 
 # ── STEP1: Passmark CPU一覧 ──────────────────────────────
 
-def fetch_cpu_list() -> list:
-    """
-    /cpu_list.php からCPU名・スコア・詳細URLを取得。
-    戻り値: [{"name": str, "passmark_score": int, "detail_url": str}, ...]
-    """
-    print(f"[Passmark] CPU一覧取得中: {CPU_LIST_URL}")
-    resp = _get(CPU_LIST_URL, timeout=30)
-    soup    = BeautifulSoup(resp.text, "html.parser")
-    table   = soup.find("table", id="cputable") or soup.find("table")
-    results = []
-
-    if not table:
+def _parse_cpu_list_html(html: str) -> list:
+    """Parse the all-vendor PassMark CPU list without making a network request."""
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table", id="cputable") or soup.find("table")
+    if table is None:
         raise RuntimeError("PassMark CPU table was not found")
-
+    results = []
     for row in table.find_all("tr"):
-        cols  = row.find_all("td")
+        cols = row.find_all("td")
         if len(cols) < 2:
             continue
-        a_tag = cols[0].find("a", href=True)
-        if not a_tag:
+        anchor = cols[0].find("a", href=True)
+        if anchor is None:
             continue
-
-        name  = a_tag.get_text(strip=True)
-        href  = a_tag["href"]
-        durl  = BASE_URL + href if href.startswith("/") else href
-
-        score_text = cols[1].get_text(strip=True)
-        try:
-            score = int(re.sub(r"[^\d]", "", score_text))
-        except ValueError:
-            score = None
-
-        if name:
-            results.append({"name": name, "passmark_score": score, "detail_url": durl})
-
+        name = anchor.get_text(" ", strip=True)
+        if not name:
+            continue
+        score_text = cols[1].get_text(" ", strip=True)
+        match = re.search(r"[\\d,]+", score_text)
+        score = int(match.group(0).replace(",", "")) if match else None
+        results.append({
+            "name": name,
+            "passmark_score": score,
+            "detail_url": urljoin(BASE_URL + "/", anchor["href"].strip()),
+        })
     if not results:
         raise RuntimeError("PassMark CPU table contained no recognizable rows")
-    print(f"[PassMark] {len(results)} 件取得")
     return results
 
+
+def fetch_cpu_list() -> list:
+    """Fetch CPU names, scores, and detail URLs for all vendors."""
+    print(f"[PassMark] CPU一覧取得中: {CPU_LIST_URL}")
+    response = _get(CPU_LIST_URL, timeout=30)
+    results = _parse_cpu_list_html(response.text)
+    print(f"[PassMark] {len(results)} 件取得")
+    return results
 
 # ── STEP2: nanoreview スペック ───────────────────────────
 
 def fetch_nanoreview(slug: str) -> dict:
-    """
-    nanoreview.net/en/cpu/<slug> からスペックを取得。
-    404の場合は空dictを返す。
-    """
+    """Fetch specifications. Only HTTP 404 is treated as a legitimate miss."""
     url = f"{NANOREVIEW}/{slug}"
     try:
-        resp = _get(url, timeout=12)
-    except requests.HTTPError as e:
-        if e.response is not None and e.response.status_code == 404:
+        response = _get(url, timeout=12)
+    except requests.HTTPError as error:
+        if error.response is not None and error.response.status_code == 404:
             return {}
         raise
+    return _parse_nanoreview_html(response.text)
 
-    soup  = BeautifulSoup(resp.text, "html.parser")
+
+def _parse_nanoreview_html(html: str) -> dict:
+    """Extract key/value pairs from NanoReview's lists and specification tables."""
+    soup = BeautifulSoup(html, "html.parser")
     specs = {}
 
-    # Compact lists near the page heading.
     for ul in soup.find_all("ul", class_="flex"):
         for li in ul.find_all("li"):
             text = li.get_text(" ", strip=True)
             if ":" in text:
-                k, _, v = text.partition(":")
-                specs[k.strip().lower()] = v.strip()
+                key, _, value = text.partition(":")
+                if key.strip() and value.strip():
+                    specs[key.strip().lower()] = value.strip()
 
-    # Specification tables (General / CPU / Package / Memory / iGPU).
     for row in soup.find_all("tr"):
         cells = row.find_all(["th", "td"], recursive=False)
         if len(cells) >= 2:
-            key = re.sub(r"\s+", " ", cells[0].get_text(" ", strip=True)).strip().lower()
+            key = re.sub(r"\\s+", " ", cells[0].get_text(" ", strip=True)).strip().lower()
             value = cells[1].get_text(" ", strip=True)
             if key and value:
                 specs[key] = value
 
-    # Description fallback for fields absent from table layouts.
+    for term in soup.find_all("dt"):
+        definition = term.find_next_sibling("dd")
+        if definition is not None:
+            key = re.sub(r"\\s+", " ", term.get_text(" ", strip=True)).strip().lower()
+            value = definition.get_text(" ", strip=True)
+            if key and value:
+                specs[key] = value
+
     for div in soup.find_all("div", class_="card-block"):
         text = div.get_text(" ", strip=True)
         if "threads" in text.lower() and "socket" in text.lower():
@@ -161,10 +166,14 @@ def fetch_nanoreview(slug: str) -> dict:
         if meta and meta.get("content"):
             specs["_desc"] = meta["content"].strip()
 
-    if not specs:
+    known = {
+        "cores", "total cores", "total threads", "threads", "socket",
+        "codename", "architecture", "memory types", "memory support",
+        "tdp", "tdp (pl1)", "transistor size", "fabrication process",
+    }
+    if not known.intersection(specs) and not specs.get("_desc"):
         raise RuntimeError("NanoReview page contained no recognizable specifications")
     return specs
-
 
 def _parse_specs(name: str, specs: dict, passmark_url: str, score) -> dict:
     """nanoreviewの生スペックをDB用dictに正規化"""
