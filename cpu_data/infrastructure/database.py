@@ -1,7 +1,7 @@
 """SQLite persistence layer for CPU records; public functions remain CLI-compatible."""
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 from datetime import datetime, timezone
 import os
 import re
@@ -160,6 +160,8 @@ def backup_database(destination) -> Path:
     source_path = Path(DB_PATH).expanduser().resolve()
     if target == source_path:
         raise ValueError("Backup destination must differ from the active database")
+    if not source_path.exists():
+        raise FileNotFoundError(source_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         raise FileExistsError(target)
@@ -184,7 +186,7 @@ def _read_schema_version():
     path = Path(DB_PATH)
     if not path.exists():
         return None
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn:
         has_meta = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'"
         ).fetchone()
