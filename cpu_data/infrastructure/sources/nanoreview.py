@@ -4,7 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 from ..http import get as _default_get
 from .errors import DataSourceParseError
-from .passmark import _brand
+from ...domain.vendors import classify_vendor as _brand
 
 NANOREVIEW = "https://nanoreview.net/en/cpu"
 
