@@ -96,7 +96,7 @@ tests/                            # DB・取得パーサー・互換性テスト
 Windows PowerShell:
 
 ```powershell
-$env:CPU_DATA_HOME = "D:\\CPU_Data"
+$env:CPU_DATA_HOME = "D:\CPU_Data"
 ```
 
 macOS / Linux:
