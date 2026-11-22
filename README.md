@@ -62,14 +62,23 @@ cpu-data-update --full
 ```text
 cpu_data/
 ├─ __init__.py
-├─ cli.py        # CLI表示・入力
-├─ updater.py    # 更新フロー・外部データ取得
-└─ database.py  # SQLite永続化
+├─ cli.py                         # CLI表示・入力
+├─ database.py                    # 旧package import互換ラッパー
+├─ updater.py                     # 旧package import / 起動互換ラッパー
+├─ application/
+│  └─ update.py                   # 更新ユースケース・チェックポイント
+└─ infrastructure/
+   ├─ database.py                 # SQLite永続化
+   ├─ http.py                     # HTTPセッション・再試行
+   └─ sources/
+      ├─ errors.py                # データ取得・解析エラー
+      ├─ passmark.py              # PassMark取得・解析
+      └─ nanoreview.py            # NanoReview取得・正規化
 
-cpu_lookup.py    # 旧CLI起動パス互換ラッパー
-db.py            # 旧DB import互換ラッパー
-updater.py       # 旧更新 import / 起動パス互換ラッパー
-tests/           # DB・取得パーサー・互換性テスト
+cpu_lookup.py                     # 旧CLI起動パス互換ラッパー
+db.py                             # 旧DB import互換ラッパー
+updater.py                        # 旧更新 import / 起動パス互換ラッパー
+tests/                            # DB・取得パーサー・互換性テスト
 ```
 
 既存の `python cpu_lookup.py`、`import db`、`import updater` は互換ラッパー経由で維持します。SQLiteファイルの既定位置もプロジェクト直下の `data/cpu.db` のままです。
