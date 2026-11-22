@@ -63,7 +63,7 @@ def _parse_cpu_list_html(html: str) -> list:
 def fetch_cpu_list(get=_default_get) -> list:
     """Fetch CPU names, scores, and detail URLs for all vendors."""
     print(f"[PassMark] CPU一覧取得中: {CPU_LIST_URL}")
-    response = get(CPU_LIST_URL, timeout=30)
+    response = get(CPU_LIST_URL)
     results = _parse_cpu_list_html(response.text)
     print(f"[PassMark] {len(results)} 件取得")
     return results
