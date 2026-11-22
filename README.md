@@ -121,7 +121,7 @@ export CPU_DATA_HOME="$HOME/.local/share/cpu-data-offline"
 
 ## データ保存先・バックアップ
 
-既定のSQLiteファイルはプロジェクト直下の `data/cpu.db` です。`CPU_DATA_HOME` が設定されている場合はそちらを使用します。
+既定のSQLiteファイルはプロジェクト直下の `data/cpu.db` です。`CPU_DATA_HOME` が設定されている場合はそちらを使用します。既定位置から別の保存先へ変更する場合、既存の `cpu.db` は自動移動しないため、初回起動前に手動でコピーしてください。
 
 スキーマv2より古い既存DBを初期化・移行する前に、SQLiteのbackup APIで自動バックアップを作成します。ファイル名は `cpu.db.pre-v2-<UTC timestamp>.bak` 形式です。移行後はmetaテーブルの `last_migration_backup` に保存先を記録します。
 
