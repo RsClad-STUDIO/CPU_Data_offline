@@ -3,7 +3,8 @@ from pathlib import Path
 
 import db
 import updater
-from cpu_data import database, updater as packaged_updater
+import cpu_lookup
+from cpu_data import database, updater as packaged_updater, cli
 from cpu_data.cli import main as cli_main
 
 
@@ -18,6 +19,11 @@ class PackageCompatibilityTests(unittest.TestCase):
 
     def test_cli_entry_point_is_importable(self):
         self.assertTrue(callable(cli_main))
+        self.assertIs(cpu_lookup, cli)
+        self.assertIs(cpu_lookup.main, cli_main)
+
+    def test_update_console_entry_point_is_importable(self):
+        self.assertTrue(callable(packaged_updater.main))
 
 
 if __name__ == "__main__":
