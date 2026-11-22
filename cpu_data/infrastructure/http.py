@@ -4,6 +4,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from .sources.errors import DataSourceError
+from ..config import SETTINGS
 
 HEADERS = {
     "User-Agent": "CPU_Data_offline/1.0 (+https://github.com/RsClad-STUDIO/CPU_Data_offline)",
@@ -13,7 +14,11 @@ HEADERS = {
 
 def build_session():
     retry = Retry(
-        total=3, connect=3, read=2, status=3, backoff_factor=0.5,
+        total=SETTINGS.http_retries,
+        connect=SETTINGS.http_retries,
+        read=SETTINGS.http_retries,
+        status=SETTINGS.http_retries,
+        backoff_factor=SETTINGS.retry_backoff,
         status_forcelist=(429, 500, 502, 503, 504),
         allowed_methods=frozenset({"GET"}),
         respect_retry_after_header=True,
@@ -31,7 +36,10 @@ SESSION = build_session()
 
 def get(url, timeout=20):
     try:
-        response = SESSION.get(url, timeout=(5, timeout))
+        response = SESSION.get(
+            url,
+            timeout=(SETTINGS.http_connect_timeout, timeout or SETTINGS.http_read_timeout),
+        )
         response.raise_for_status()
         return response
     except requests.HTTPError:
