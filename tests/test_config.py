@@ -1,3 +1,4 @@
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -6,27 +7,68 @@ from cpu_data.config import PROJECT_ROOT, load_settings
 
 class SettingsTests(unittest.TestCase):
     def test_default_data_location_uses_os_standard_directory(self):
-        settings = load_settings({"LOCALAPPDATA": "/tmp/local-app-data"}, platform="nt", home=Path("/home/test"))
-        self.assertEqual(settings.data_dir, Path("/tmp/local-app-data/CPU_Data_offline"))
-        self.assertEqual(settings.db_path.name, "cpu.db")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            local_app_data = root / "local-app-data"
+            settings = load_settings(
+                {"LOCALAPPDATA": str(local_app_data)},
+                platform="nt",
+                home=root / "home",
+            )
+            self.assertEqual(settings.data_dir, (local_app_data / "CPU_Data_offline").resolve())
+            self.assertEqual(settings.db_path.name, "cpu.db")
 
     def test_macos_and_linux_default_locations(self):
-        mac = load_settings({}, platform="darwin", home=Path("/Users/test"))
-        self.assertEqual(mac.data_dir, Path("/Users/test/Library/Application Support/CPU_Data_offline"))
-        linux = load_settings({}, platform="posix", home=Path("/home/test"))
-        self.assertEqual(linux.data_dir, Path("/home/test/.local/share/cpu-data-offline"))
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "home"
+            mac = load_settings({}, platform="darwin", home=home)
+            self.assertEqual(
+                mac.data_dir,
+                (home / "Library" / "Application Support" / "CPU_Data_offline").resolve(),
+            )
+            linux = load_settings({}, platform="linux", home=home)
+            self.assertEqual(
+                linux.data_dir,
+                (home / ".local" / "share" / "cpu-data-offline").resolve(),
+            )
 
     def test_platform_configuration_directories(self):
-        windows = load_settings({"APPDATA": "/tmp/roaming"}, platform="win32", home=Path("/home/test"))
-        self.assertEqual(windows.config_dir, Path("/tmp/roaming/CPU_Data_offline"))
-        mac = load_settings({}, platform="darwin", home=Path("/Users/test"))
-        self.assertEqual(mac.config_dir, Path("/Users/test/Library/Preferences/CPU_Data_offline"))
-        linux = load_settings({"XDG_CONFIG_HOME": "/tmp/config"}, platform="linux", home=Path("/home/test"))
-        self.assertEqual(linux.config_dir, Path("/tmp/config/cpu-data-offline"))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            roaming = root / "roaming"
+            windows = load_settings(
+                {"APPDATA": str(roaming)}, platform="win32", home=root / "home"
+            )
+            self.assertEqual(
+                windows.config_dir, (roaming / "CPU_Data_offline").resolve()
+            )
+            home = root / "mac-home"
+            mac = load_settings({}, platform="darwin", home=home)
+            self.assertEqual(
+                mac.config_dir,
+                (home / "Library" / "Preferences" / "CPU_Data_offline").resolve(),
+            )
+            xdg_config = root / "config"
+            linux = load_settings(
+                {"XDG_CONFIG_HOME": str(xdg_config)},
+                platform="linux",
+                home=root / "linux-home",
+            )
+            self.assertEqual(
+                linux.config_dir, (xdg_config / "cpu-data-offline").resolve()
+            )
 
     def test_xdg_data_home_is_respected(self):
-        settings = load_settings({"XDG_DATA_HOME": "/mnt/data"}, platform="posix", home=Path("/home/test"))
-        self.assertEqual(settings.data_dir, Path("/mnt/data/cpu-data-offline"))
+        with tempfile.TemporaryDirectory() as directory:
+            xdg_data = Path(directory) / "data"
+            settings = load_settings(
+                {"XDG_DATA_HOME": str(xdg_data)},
+                platform="linux",
+                home=Path(directory) / "home",
+            )
+            self.assertEqual(
+                settings.data_dir, (xdg_data / "cpu-data-offline").resolve()
+            )
 
     def test_relative_data_home_is_resolved_from_project_root(self):
         settings = load_settings({"CPU_DATA_HOME": "custom-data"}, platform="posix", home=Path("/home/test"))
