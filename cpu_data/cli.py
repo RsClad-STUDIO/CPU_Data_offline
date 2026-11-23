@@ -9,7 +9,9 @@ cpu_lookup.py - CPU情報検索CLIツール
 """
 import sys
 import argparse
-from .database import db_exists, search_cpus, get_cpu_by_id, get_meta, count_cpus
+from .database import search_cpus, get_meta, count_cpus
+from .database_location import configure_database, DatabaseSelectionRequired
+from .infrastructure import database as database_store
 
 # ── rich が使えれば使う ──────────────────────────────────
 try:
@@ -152,19 +154,15 @@ def print_header():
 # ── DB初期化チェック ────────────────────────────────────
 
 def ensure_db():
-    """DBがなければ自動でダウンロード"""
-    if db_exists():
+    """既存DBの有無だけを確認し、初回の自動取得は行わない。"""
+    if database_store.DB_PATH.is_file():
         return True
-    print("データベースが見つかりません。初回セットアップを開始します。")
-    print("Passmarkスコアのみの高速取得を行います（後で :u で完全更新可能）")
-    try:
-        from .updater import run_update
-        run_update(fast=True)
-        return True
-    except Exception as e:
-        print_error(f"セットアップ失敗: {e}")
-        print("手動で次を実行してください: python cpu_lookup.py --update")
-        return False
+    print("データベースが見つかりません。")
+    print("初回データ取得を行うには、次を明示的に実行してください:")
+    print("  cpu-lookup --fast")
+    print("または: python cpu_lookup.py --fast")
+    return False
+
 
 
 # ── 検索ループ ───────────────────────────────────────────
@@ -261,10 +259,23 @@ def main():
         epilog=__doc__,
     )
     parser.add_argument("query", nargs="?", help="検索するCPU型番")
+    parser.add_argument("--db-location", help="DB保存先ディレクトリ（cpu.dbを配置）。CPU_DATA_HOMEが優先されます")
     update_group = parser.add_mutually_exclusive_group()
     update_group.add_argument("--update", action="store_true", help="データを完全更新")
     update_group.add_argument("--fast", action="store_true", help="高速更新（PassMarkのみ）")
     args = parser.parse_args()
+
+    try:
+        configure_database(
+            db_location=args.db_location,
+            interactive=bool(sys.stdin and sys.stdin.isatty()),
+        )
+    except DatabaseSelectionRequired as e:
+        print_error(str(e))
+        sys.exit(2)
+    except Exception as e:
+        print_error(f"DB保存先の決定に失敗しました: {e}")
+        sys.exit(1)
 
     if args.update or args.fast:
         from .updater import run_update
