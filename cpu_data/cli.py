@@ -159,7 +159,7 @@ def ensure_db():
         return True
     print("データベースが見つかりません。")
     print("初回データ取得を行うには、次を明示的に実行してください:")
-    print("  cpu-lookup --fast")
+    print("  cpu-lookup update --mode fast")
     print("または: python cpu_lookup.py --fast")
     return False
 
@@ -260,10 +260,17 @@ def main():
     )
     parser.add_argument("query", nargs="?", help="検索するCPU型番")
     parser.add_argument("--db-location", help="DB保存先ディレクトリ（cpu.dbを配置）。CPU_DATA_HOMEが優先されます")
+    parser.add_argument("--mode", choices=("fast", "full"), help="updateコマンドの更新モード")
     update_group = parser.add_mutually_exclusive_group()
     update_group.add_argument("--update", action="store_true", help="データを完全更新")
     update_group.add_argument("--fast", action="store_true", help="高速更新（PassMarkのみ）")
     args = parser.parse_args()
+    if args.mode and args.query != "update":
+        parser.error("--mode は update コマンドと併用してください")
+    if args.query == "update" and not args.mode:
+        parser.error("update コマンドには --mode fast または --mode full が必要です")
+    if args.query == "update":
+        args.query = None
 
     try:
         configure_database(
@@ -277,10 +284,10 @@ def main():
         print_error(f"DB保存先の決定に失敗しました: {e}")
         sys.exit(1)
 
-    if args.update or args.fast:
+    if args.update or args.fast or args.mode:
         from .updater import run_update
         try:
-            run_update(fast=args.fast)
+            run_update(fast=(args.fast or args.mode == "fast"))
         except KeyboardInterrupt:
             print_info("更新を中断しました。保存済みのデータは保持されています。")
             sys.exit(130)
