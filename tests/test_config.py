@@ -5,13 +5,23 @@ from cpu_data.config import PROJECT_ROOT, load_settings
 
 
 class SettingsTests(unittest.TestCase):
-    def test_default_data_location_stays_in_project_data_directory(self):
-        settings = load_settings({})
-        self.assertEqual(settings.data_dir, (PROJECT_ROOT / "data").resolve())
-        self.assertEqual(settings.db_path, (PROJECT_ROOT / "data" / "cpu.db").resolve())
+    def test_default_data_location_uses_os_standard_directory(self):
+        settings = load_settings({}, platform="nt", home=Path("C:/Users/test"))
+        self.assertEqual(settings.data_dir, (Path("C:/Users/test/AppData/Local/CPU_Data_offline")).resolve())
+        self.assertEqual(settings.db_path.name, "cpu.db")
+
+    def test_macos_and_linux_default_locations(self):
+        mac = load_settings({}, platform="darwin", home=Path("/Users/test"))
+        self.assertEqual(mac.data_dir, Path("/Users/test/Library/Application Support/CPU_Data_offline"))
+        linux = load_settings({}, platform="posix", home=Path("/home/test"))
+        self.assertEqual(linux.data_dir, Path("/home/test/.local/share/cpu-data-offline"))
+
+    def test_xdg_data_home_is_respected(self):
+        settings = load_settings({"XDG_DATA_HOME": "/mnt/data"}, platform="posix", home=Path("/home/test"))
+        self.assertEqual(settings.data_dir, Path("/mnt/data/cpu-data-offline"))
 
     def test_relative_data_home_is_resolved_from_project_root(self):
-        settings = load_settings({"CPU_DATA_HOME": "custom-data"})
+        settings = load_settings({"CPU_DATA_HOME": "custom-data"}, platform="posix", home=Path("/home/test"))
         self.assertEqual(settings.data_dir, (PROJECT_ROOT / "custom-data").resolve())
         self.assertEqual(settings.db_path.name, "cpu.db")
 
