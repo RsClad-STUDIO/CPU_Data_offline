@@ -230,7 +230,7 @@ def _parse_nanoreview_html(html: str) -> dict:
 
 def fetch_nanoreview(slug: str, get=_default_get) -> dict:
     """Fetch specifications. Only HTTP 404 is treated as a legitimate miss."""
-    url = f"{NANOREVIEW}/{slug}"
+    url = slug if slug.startswith(("https://", "http://")) else f"{NANOREVIEW}/{slug}"
     try:
         response = get(url)
     except requests.HTTPError as error:
@@ -294,8 +294,7 @@ def _parse_specs(name: str, specs: dict, passmark_url: str, score) -> dict:
         if m:
             igpu = m.group(1).strip()
 
-    slug      = _cpu_to_slug(name)
-    nano_url  = f"{NANOREVIEW}/{slug}"
+    nano_url  = nanoreview_url(name)"
 
     return {
         "name":           name,
