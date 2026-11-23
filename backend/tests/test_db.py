@@ -182,5 +182,64 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(backups, [])
 
 
+    def test_verify_rejects_missing_required_cpu_column(self):
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute("DROP TABLE cpus")
+            conn.execute(
+                "CREATE TABLE cpus (id INTEGER PRIMARY KEY, name TEXT NOT NULL, "
+                "name_key TEXT, passmark_score INTEGER)"
+            )
+            conn.execute(
+                "CREATE UNIQUE INDEX ux_cpus_name_key ON cpus(name_key)"
+            )
+        valid, result = db.verify_database()
+        self.assertFalse(valid)
+        self.assertEqual(result, "schema_invalid")
+
+    def test_verify_rejects_missing_schema_version(self):
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute("DELETE FROM meta WHERE key = 'schema_version'")
+        valid, result = db.verify_database()
+        self.assertFalse(valid)
+        self.assertEqual(result, "schema_version_missing")
+
+    def test_verify_rejects_invalid_schema_version(self):
+        db.set_meta("schema_version", "not-a-number")
+        valid, result = db.verify_database()
+        self.assertFalse(valid)
+        self.assertEqual(result, "schema_version_invalid")
+
+    def test_verify_rejects_unsupported_schema_version(self):
+        db.set_meta("schema_version", str(db.SCHEMA_VERSION + 1))
+        valid, result = db.verify_database()
+        self.assertFalse(valid)
+        self.assertEqual(result, "schema_version_unsupported")
+
+    def test_verify_rejects_missing_name_key_unique_index(self):
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute("DROP INDEX ux_cpus_name_key")
+        valid, result = db.verify_database()
+        self.assertFalse(valid)
+        self.assertEqual(result, "schema_unique_index_missing")
+
+    def test_verify_rejects_null_name_key(self):
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute(
+                "INSERT INTO cpus(name, name_key) VALUES(?, NULL)",
+                ("Invalid CPU",),
+            )
+        valid, result = db.verify_database()
+        self.assertFalse(valid)
+        self.assertEqual(result, "schema_name_key_invalid")
+
+    def test_verify_is_read_only(self):
+        db.upsert_cpu({"name": "Read-only verification CPU"})
+        before = self.db_path.read_bytes()
+        valid, result = db.verify_database()
+        after = self.db_path.read_bytes()
+        self.assertTrue(valid, result)
+        self.assertEqual(before, after)
+
+
 if __name__ == "__main__":
     unittest.main()

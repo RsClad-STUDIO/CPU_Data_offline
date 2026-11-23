@@ -177,25 +177,108 @@ def backup_database(destination) -> Path:
 
 
 def verify_database() -> tuple[bool, str]:
-    """Check an existing initialized SQLite database without creating or modifying it."""
+    """Validate SQLite integrity and the complete application schema read-only."""
     path = Path(DB_PATH).expanduser().resolve()
     if not path.is_file():
         return False, "database_not_found"
+
     uri = path.as_uri() + "?mode=ro"
     try:
         with closing(sqlite3.connect(uri, uri=True)) as conn:
-            result = conn.execute("PRAGMA integrity_check").fetchone()
-            message = result[0] if result else "no_result"
+            conn.row_factory = sqlite3.Row
+            integrity = conn.execute("PRAGMA integrity_check").fetchone()
+            message = integrity[0] if integrity else "no_result"
             if message != "ok":
                 return False, message
-            tables = {row[0] for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )}
+
+            tables = {
+                row[0] for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
             if not {"cpus", "meta"}.issubset(tables):
                 return False, "schema_missing"
-            columns = {row[1] for row in conn.execute("PRAGMA table_info(cpus)")}
-            if not {"id", "name", "name_key", "passmark_score"}.issubset(columns):
+
+            cpu_info = {
+                row["name"]: row
+                for row in conn.execute("PRAGMA table_info(cpus)")
+            }
+            expected_cpu_types = {
+                "id": "INTEGER",
+                "name": "TEXT",
+                "name_key": "TEXT",
+                "brand": "TEXT",
+                "family": "TEXT",
+                "cores": "TEXT",
+                "threads": "TEXT",
+                "base_clock": "TEXT",
+                "boost_clock": "TEXT",
+                "tdp": "TEXT",
+                "socket": "TEXT",
+                "process": "TEXT",
+                "memory_support": "TEXT",
+                "igpu": "TEXT",
+                "passmark_score": "INTEGER",
+                "source_url": "TEXT",
+                "updated_at": "TEXT",
+            }
+            if not set(expected_cpu_types).issubset(cpu_info):
                 return False, "schema_invalid"
+            for column, expected_type in expected_cpu_types.items():
+                if str(cpu_info[column]["type"]).upper() != expected_type:
+                    return False, "schema_invalid"
+            if cpu_info["id"]["pk"] != 1 or cpu_info["name"]["notnull"] != 1:
+                return False, "schema_invalid"
+
+            meta_info = {
+                row["name"]: row
+                for row in conn.execute("PRAGMA table_info(meta)")
+            }
+            if not {"key", "value"}.issubset(meta_info):
+                return False, "schema_invalid"
+            if (
+                str(meta_info["key"]["type"]).upper() != "TEXT"
+                or str(meta_info["value"]["type"]).upper() != "TEXT"
+                or meta_info["key"]["pk"] != 1
+            ):
+                return False, "schema_invalid"
+
+            version_row = conn.execute(
+                "SELECT value FROM meta WHERE key = 'schema_version'"
+            ).fetchone()
+            if version_row is None:
+                return False, "schema_version_missing"
+            try:
+                schema_version = int(version_row[0])
+            except (TypeError, ValueError):
+                return False, "schema_version_invalid"
+            if schema_version != SCHEMA_VERSION:
+                return False, "schema_version_unsupported"
+
+            has_unique_name_key = False
+            for index in conn.execute("PRAGMA index_list('cpus')"):
+                if not index["unique"] or index["partial"]:
+                    continue
+                escaped_name = str(index["name"]).replace('"', '""')
+                indexed_columns = [
+                    row["name"]
+                    for row in conn.execute(
+                        f'PRAGMA index_info("{escaped_name}")'
+                    )
+                ]
+                if indexed_columns == ["name_key"]:
+                    has_unique_name_key = True
+                    break
+            if not has_unique_name_key:
+                return False, "schema_unique_index_missing"
+
+            invalid_keys = conn.execute(
+                "SELECT 1 FROM cpus "
+                "WHERE name_key IS NULL OR name_key = '' LIMIT 1"
+            ).fetchone()
+            if invalid_keys:
+                return False, "schema_name_key_invalid"
+
             return True, "ok"
     except sqlite3.DatabaseError as error:
         return False, str(error)

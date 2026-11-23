@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import datetime
+import hashlib
+import json
 import threading
 import time
 from typing import Callable
@@ -147,6 +149,18 @@ def _record_without_specs(item):
     }
 
 
+def _cpu_list_fingerprint(cpu_list):
+    """Return a stable fingerprint for the ordered PassMark source rows."""
+    source_rows = [
+        [item.get("name"), item.get("passmark_score"), item.get("detail_url")]
+        for item in cpu_list
+    ]
+    payload = json.dumps(
+        source_rows, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def run_update(
     fast: bool = False,
     *,
@@ -188,16 +202,30 @@ def run_update(
         return UpdateResult(mode, "cancelled", total, 0, 0, 0, count_cpus())
     start_index = 0
     if not fast:
+        fingerprint = _cpu_list_fingerprint(cpu_list)
         resume = get_meta("update_in_progress") == "true"
         checkpoint = get_meta("update_checkpoint") if resume else None
-        if not resume:
+        previous_fingerprint = (
+            get_meta("update_cpu_list_fingerprint") if resume else None
+        )
+
+        # A checkpoint is safe only for the exact ordered source snapshot.
+        # Legacy checkpoints have no fingerprint, so restart rather than risk
+        # skipping CPUs that were added or moved before the old checkpoint.
+        if not resume or previous_fingerprint != fingerprint:
+            checkpoint = None
             set_meta("update_checkpoint", "")
-        if checkpoint:
-            positions = [i for i, item in enumerate(cpu_list) if item["name"] == checkpoint]
+        elif checkpoint:
+            positions = [
+                i for i, item in enumerate(cpu_list)
+                if item["name"] == checkpoint
+            ]
             if positions:
                 start_index = positions[-1] + 1
             else:
                 set_meta("update_checkpoint", "")
+
+        set_meta("update_cpu_list_fingerprint", fingerprint)
         set_meta("update_in_progress", "true")
 
     _emit(event_handler, UpdateStarted(mode, total, start_index))

@@ -198,7 +198,11 @@ class UpdaterParserTests(unittest.TestCase):
             {"name": "Intel Core i5-2", "passmark_score": 200, "detail_url": "passmark-2"},
             {"name": "Intel Core i5-3", "passmark_score": 300, "detail_url": "passmark-3"},
         ]
-        meta = {"update_in_progress": "true", "update_checkpoint": "Intel Core i5-2"}
+        meta = {
+            "update_in_progress": "true",
+            "update_checkpoint": "Intel Core i5-2",
+            "update_cpu_list_fingerprint": updater._cpu_list_fingerprint(items),
+        }
         with patch.object(updater, "init_db"), \
              patch.object(updater, "fetch_cpu_list", return_value=items), \
              patch.object(updater, "get_meta", side_effect=lambda key: meta.get(key)), \
@@ -214,6 +218,83 @@ class UpdaterParserTests(unittest.TestCase):
         self.assertEqual([row["name"] for row in saved], ["Intel Core i5-3"])
         set_meta.assert_any_call("update_in_progress", "false")
         set_meta.assert_any_call("update_checkpoint", "")
+
+
+    def test_changed_source_order_restarts_full_update_from_beginning(self):
+        previous_items = [
+            {"name": "CPU A", "passmark_score": 100, "detail_url": "url-a"},
+            {"name": "CPU B", "passmark_score": 200, "detail_url": "url-b"},
+            {"name": "CPU C", "passmark_score": 300, "detail_url": "url-c"},
+        ]
+        current_items = [previous_items[1], previous_items[0], previous_items[2]]
+        meta = {
+            "update_in_progress": "true",
+            "update_checkpoint": "CPU B",
+            "update_cpu_list_fingerprint": updater._cpu_list_fingerprint(previous_items),
+        }
+        events = []
+        with patch.object(updater, "init_db"), \
+             patch.object(updater, "fetch_cpu_list", return_value=current_items), \
+             patch.object(updater, "get_meta", side_effect=lambda key: meta.get(key)), \
+             patch.object(updater, "set_meta") as set_meta, \
+             patch.object(updater, "upsert_many"), \
+             patch.object(updater, "fetch_nanoreview", return_value={}) as fetch_nano, \
+             patch.object(updater, "count_cpus", return_value=3), \
+             patch.object(updater.time, "sleep"):
+            updater.run_update(event_handler=events.append)
+
+        self.assertEqual(fetch_nano.call_count, 3)
+        started = next(event for event in events if isinstance(event, updater.UpdateStarted))
+        self.assertEqual(started.start_index, 0)
+        set_meta.assert_any_call(
+            "update_cpu_list_fingerprint",
+            updater._cpu_list_fingerprint(current_items),
+        )
+        set_meta.assert_any_call("update_checkpoint", "")
+
+    def test_changed_source_score_or_url_restarts_full_update(self):
+        old_items = [
+            {"name": "CPU A", "passmark_score": 100, "detail_url": "url-a"},
+            {"name": "CPU B", "passmark_score": 200, "detail_url": "url-b"},
+        ]
+        changed_items = [
+            {"name": "CPU A", "passmark_score": 101, "detail_url": "url-a"},
+            {"name": "CPU B", "passmark_score": 200, "detail_url": "url-b-new"},
+        ]
+        meta = {
+            "update_in_progress": "true",
+            "update_checkpoint": "CPU A",
+            "update_cpu_list_fingerprint": updater._cpu_list_fingerprint(old_items),
+        }
+        with patch.object(updater, "init_db"), \
+             patch.object(updater, "fetch_cpu_list", return_value=changed_items), \
+             patch.object(updater, "get_meta", side_effect=lambda key: meta.get(key)), \
+             patch.object(updater, "set_meta"), \
+             patch.object(updater, "upsert_many"), \
+             patch.object(updater, "fetch_nanoreview", return_value={}) as fetch_nano, \
+             patch.object(updater, "count_cpus", return_value=2), \
+             patch.object(updater.time, "sleep"):
+            updater.run_update()
+
+        self.assertEqual(fetch_nano.call_count, 2)
+
+    def test_legacy_checkpoint_without_fingerprint_restarts_from_beginning(self):
+        items = [
+            {"name": "CPU A", "passmark_score": 100, "detail_url": "url-a"},
+            {"name": "CPU B", "passmark_score": 200, "detail_url": "url-b"},
+        ]
+        meta = {"update_in_progress": "true", "update_checkpoint": "CPU A"}
+        with patch.object(updater, "init_db"), \
+             patch.object(updater, "fetch_cpu_list", return_value=items), \
+             patch.object(updater, "get_meta", side_effect=lambda key: meta.get(key)), \
+             patch.object(updater, "set_meta"), \
+             patch.object(updater, "upsert_many"), \
+             patch.object(updater, "fetch_nanoreview", return_value={}) as fetch_nano, \
+             patch.object(updater, "count_cpus", return_value=2), \
+             patch.object(updater.time, "sleep"):
+            updater.run_update()
+
+        self.assertEqual(fetch_nano.call_count, 2)
 
 
 if __name__ == "__main__":
