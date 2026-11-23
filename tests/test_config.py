@@ -6,8 +6,8 @@ from cpu_data.config import PROJECT_ROOT, load_settings
 
 class SettingsTests(unittest.TestCase):
     def test_default_data_location_uses_os_standard_directory(self):
-        settings = load_settings({}, platform="nt", home=Path("C:/Users/test"))
-        self.assertEqual(settings.data_dir, (Path("C:/Users/test/AppData/Local/CPU_Data_offline")).resolve())
+        settings = load_settings({"LOCALAPPDATA": "/tmp/local-app-data"}, platform="nt", home=Path("/home/test"))
+        self.assertEqual(settings.data_dir, Path("/tmp/local-app-data/CPU_Data_offline"))
         self.assertEqual(settings.db_path.name, "cpu.db")
 
     def test_macos_and_linux_default_locations(self):
