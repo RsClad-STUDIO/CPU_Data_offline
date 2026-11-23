@@ -49,7 +49,7 @@ def default_config_dir(platform: str | None = None, environ: Mapping[str, str] |
                        home: Path | None = None) -> Path:
     """Return the platform-standard per-user configuration directory."""
     env = os.environ if environ is None else environ
-    system = os.name if platform is None else platform
+    system = sys.platform if platform is None else platform
     user_home = Path.home() if home is None else Path(home)
     if system == "nt":
         root = env.get("APPDATA")
