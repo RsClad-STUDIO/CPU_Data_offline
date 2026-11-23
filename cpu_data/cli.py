@@ -202,7 +202,7 @@ def _run_update_in_adapter(fast=False):
     return result, 0
 
 
-def _json_output(command, ok, data=None, error=None, warnings=None):
+def _json_output(command, ok, data=None, error=None, warnings=None, exit_code=None):
     payload = {
         "schema_version": 1,
         "command": command,
@@ -213,6 +213,8 @@ def _json_output(command, ok, data=None, error=None, warnings=None):
     if error is not None:
         payload["error"] = error
     print(json.dumps(payload, ensure_ascii=False, default=str))
+    if exit_code is not None:
+        return exit_code
     return 0 if ok else 1
 
 
@@ -224,7 +226,7 @@ def _run_search(query, limit, output_format):
     try:
         rows = queries.search_cpus(query, limit=limit)
     except (TypeError, ValueError) as error:
-        return _json_output("search", False, error={"code": "invalid_query", "message": str(error)}) if output_format == "json" else (print_error(str(error)) or 2)
+        return _json_output("search", False, error={"code": "invalid_query", "message": str(error)}, exit_code=2) if output_format == "json" else (print_error(str(error)) or 2)
     data = [_cpu_payload(row) for row in rows]
     if output_format == "json":
         return _json_output("search", True, data={"items": data, "count": len(data)})
@@ -264,6 +266,7 @@ def _run_show(identifier, output_format):
                 "code": "not_found" if not candidates else "ambiguous",
                 "message": "CPUが見つかりません" if not candidates else "完全一致するCPUがありません。候補を確認してください",
             },
+            exit_code=3,
         )
     if candidates:
         print_info("完全一致するCPUはありません。候補を表示します:")
@@ -417,7 +420,7 @@ def main(argv=None):
             return 1
         if code == 130:
             if args.format == "json":
-                return _json_output("update", False, data={"status": "cancelled"})
+                return _json_output("update", False, data={"status": "cancelled"}, exit_code=130)
             print_info("更新を中断しました。保存済みデータは保持されています。")
             return 130
         if args.format == "json":
