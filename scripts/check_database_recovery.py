@@ -16,7 +16,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-import db
+from cpu_data.infrastructure import database as db
 
 
 def create_legacy_database(path: Path) -> None:
