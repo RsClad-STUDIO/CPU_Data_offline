@@ -28,11 +28,44 @@ def _nonnegative_float(env: Mapping[str, str], name: str, default: float) -> flo
     return value
 
 
+def default_data_dir(platform: str | None = None, environ: Mapping[str, str] | None = None,
+                     home: Path | None = None) -> Path:
+    """Return the platform-standard per-user application data directory."""
+    env = os.environ if environ is None else environ
+    system = os.name if platform is None else platform
+    user_home = Path.home() if home is None else Path(home)
+    if system == "nt":
+        root = env.get("LOCALAPPDATA")
+        return (Path(root) if root else user_home / "AppData" / "Local") / "CPU_Data_offline"
+    if system == "darwin":
+        return user_home / "Library" / "Application Support" / "CPU_Data_offline"
+    xdg_data = env.get("XDG_DATA_HOME")
+    root = Path(xdg_data).expanduser() if xdg_data else user_home / ".local" / "share"
+    return root / "cpu-data-offline"
+
+
+def default_config_dir(platform: str | None = None, environ: Mapping[str, str] | None = None,
+                       home: Path | None = None) -> Path:
+    """Return the platform-standard per-user configuration directory."""
+    env = os.environ if environ is None else environ
+    system = os.name if platform is None else platform
+    user_home = Path.home() if home is None else Path(home)
+    if system == "nt":
+        root = env.get("APPDATA")
+        return (Path(root) if root else user_home / "AppData" / "Roaming") / "CPU_Data_offline"
+    if system == "darwin":
+        return user_home / "Library" / "Preferences" / "CPU_Data_offline"
+    xdg_config = env.get("XDG_CONFIG_HOME")
+    root = Path(xdg_config).expanduser() if xdg_config else user_home / ".config"
+    return root / "cpu-data-offline"
+
+
 @dataclass(frozen=True)
 class Settings:
     project_root: Path
     data_dir: Path
     db_path: Path
+    config_dir: Path
     http_connect_timeout: int = 5
     http_read_timeout: int = 20
     http_retries: int = 3
@@ -41,21 +74,20 @@ class Settings:
     nanoreview_delay: float = 0.5
 
 
-def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
-    """Load settings; relative CPU_DATA_HOME paths are rooted at the project."""
+def load_settings(environ: Mapping[str, str] | None = None,
+                  platform: str | None = None, home: Path | None = None) -> Settings:
+    """Load settings. CPU_DATA_HOME overrides the OS-standard data directory."""
     env = os.environ if environ is None else environ
     raw_data_dir = env.get("CPU_DATA_HOME")
-    if raw_data_dir:
-        data_dir = Path(raw_data_dir).expanduser()
-        if not data_dir.is_absolute():
-            data_dir = PROJECT_ROOT / data_dir
-    else:
-        data_dir = PROJECT_ROOT / "data"
-
+    data_dir = Path(raw_data_dir).expanduser() if raw_data_dir else default_data_dir(platform, env, home)
+    if not data_dir.is_absolute():
+        data_dir = PROJECT_ROOT / data_dir
+    config_dir = default_config_dir(platform, env, home)
     return Settings(
         project_root=PROJECT_ROOT,
         data_dir=data_dir.resolve(),
         db_path=(data_dir / "cpu.db").resolve(),
+        config_dir=config_dir.resolve(),
         http_connect_timeout=_positive_int(env, "CPU_HTTP_CONNECT_TIMEOUT", 5),
         http_read_timeout=_positive_int(env, "CPU_HTTP_READ_TIMEOUT", 20),
         http_retries=_nonnegative_int(env, "CPU_HTTP_RETRIES", 3),
