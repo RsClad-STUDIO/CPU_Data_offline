@@ -273,5 +273,26 @@ class CLITests(unittest.TestCase):
             self.assertEqual(raised.exception.code, 2)
 
 
+    def test_full_update_progress_uses_absolute_position_when_resumed(self):
+        event = updater.UpdateProgress(
+            mode="full", processed=1, total=4, cpu_name="CPU D",
+            status="success", succeeded=1, not_found=0, position=3,
+        )
+        stderr = io.StringIO()
+        with patch("sys.stderr", stderr):
+            cli._event_to_stderr(event)
+        self.assertIn("進捗: 3/4", stderr.getvalue())
+
+    def test_fast_update_progress_uses_current_run_processed_count(self):
+        event = updater.UpdateProgress(
+            mode="fast", processed=1, total=4, cpu_name="CPU A",
+            status="success", succeeded=1, not_found=0, position=3,
+        )
+        stderr = io.StringIO()
+        with patch("sys.stderr", stderr):
+            cli._event_to_stderr(event)
+        self.assertIn("進捗: 1/4", stderr.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
