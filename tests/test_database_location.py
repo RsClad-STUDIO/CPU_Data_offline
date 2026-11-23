@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,11 +12,12 @@ from cpu_data import database_location as location
 
 def make_database(path: Path, rows=("Intel Core i7-13700K",)):
     path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as conn:
-        conn.execute("CREATE TABLE cpus (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
-        conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
-        conn.execute("INSERT INTO meta VALUES ('schema_version', '2')")
-        conn.executemany("INSERT INTO cpus(name) VALUES (?)", [(name,) for name in rows])
+    with closing(sqlite3.connect(path)) as conn:
+        with conn:
+            conn.execute("CREATE TABLE cpus (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+            conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+            conn.execute("INSERT INTO meta VALUES ('schema_version', '2')")
+            conn.executemany("INSERT INTO cpus(name) VALUES (?)", [(name,) for name in rows])
 
 
 class DatabaseLocationTests(unittest.TestCase):
@@ -98,8 +100,9 @@ class DatabaseLocationTests(unittest.TestCase):
 
     def test_future_schema_is_rejected_without_creating_destination(self):
         make_database(self.old_db)
-        with sqlite3.connect(self.old_db) as conn:
-            conn.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
+        with closing(sqlite3.connect(self.old_db)) as conn:
+            with conn:
+                conn.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
         with self.assertRaises(RuntimeError):
             location.migrate_database(self.old_db, self.new_db)
         self.assertTrue(self.old_db.exists())
