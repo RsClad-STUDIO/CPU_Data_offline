@@ -18,15 +18,15 @@ def _positive_int(env: Mapping[str, str], name: str, default: int) -> int:
 
 def _nonnegative_int(env: Mapping[str, str], name: str, default: int) -> int:
     value = int(env.get(name, default))
-    if not math.isfinite(value) or value < 0:
-        raise ValueError(f"{name} must be a finite, non-negative number")
+    if value < 0:
+        raise ValueError(f"{name} must not be negative")
     return value
 
 
 def _nonnegative_float(env: Mapping[str, str], name: str, default: float) -> float:
     value = float(env.get(name, default))
-    if value < 0:
-        raise ValueError(f"{name} must not be negative")
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(f"{name} must be a finite, non-negative number")
     return value
 
 
