@@ -267,6 +267,8 @@ def main():
     args = parser.parse_args()
     if args.mode and args.query != "update":
         parser.error("--mode は update コマンドと併用してください")
+    if args.mode and (args.fast or args.update):
+        parser.error("--mode と --fast / --update は併用できません")
     if args.query == "update" and not args.mode:
         parser.error("update コマンドには --mode fast または --mode full が必要です")
     if args.query == "update":
