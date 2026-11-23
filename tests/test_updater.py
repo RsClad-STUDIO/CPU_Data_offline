@@ -125,6 +125,30 @@ class UpdaterParserTests(unittest.TestCase):
         self.assertEqual(updater._brand("Qualcomm Snapdragon X Elite"), "Qualcomm")
         self.assertEqual(updater._brand("AArch64"), "ARM")
 
+    def test_vendor_classification_prefers_explicit_product_brand(self):
+        self.assertEqual(updater._brand("Apple M4 Max 14 Core"), "Apple")
+        self.assertEqual(
+            updater._brand("NVIDIA RTX Spark N1X (6144-core GPU, 20-core)"),
+            "NVIDIA",
+        )
+        self.assertEqual(updater._brand("Intel Core i7-13700K"), "Intel")
+        self.assertEqual(updater._brand("Core i7-13700K"), "Intel")
+        self.assertEqual(updater._brand("Qualcomm Snapdragon 888"), "Qualcomm")
+
+    def test_nanoreview_url_handles_cpu_soc_and_passmark_suffixes(self):
+        self.assertEqual(
+            updater._nanoreview_url("Apple M4 Max 14 Core"),
+            "https://nanoreview.net/en/cpu/apple-m4-max-14-core",
+        )
+        self.assertEqual(
+            updater._nanoreview_url("NVIDIA RTX Spark N1X (6144-core GPU, 20-core)"),
+            "https://nanoreview.net/en/cpu/nvidia-rtx-spark-n1x",
+        )
+        self.assertEqual(
+            updater._nanoreview_url("Snapdragon888"),
+            "https://nanoreview.net/en/soc/qualcomm-snapdragon-875",
+        )
+
     def test_nanoreview_rejects_unrecognized_html(self):
         with self.assertRaises(updater.DataSourceParseError):
             updater._parse_nanoreview_html("<html><body>maintenance page</body></html>")
