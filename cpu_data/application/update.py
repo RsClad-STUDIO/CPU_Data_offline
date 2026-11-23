@@ -146,12 +146,37 @@ def run_update(fast: bool = False):
 
 def main(argv=None):
     import argparse
+    import sys
+    from ..database_location import configure_database, DatabaseSelectionRequired
+
     parser = argparse.ArgumentParser(description="Update offline CPU database")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--fast", action="store_true", help="PassMark list and scores only")
     group.add_argument("--full", action="store_true", help="Fetch detailed specifications")
+    parser.add_argument("--db-location", help="DB directory; CPU_DATA_HOME takes precedence")
     args = parser.parse_args(argv)
-    run_update(fast=args.fast)
+
+    try:
+        configure_database(
+            db_location=args.db_location,
+            interactive=bool(sys.stdin and sys.stdin.isatty()),
+        )
+    except DatabaseSelectionRequired as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except Exception as exc:
+        print(f"DB保存先の決定に失敗しました: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        run_update(fast=args.fast)
+    except KeyboardInterrupt:
+        print("更新を中断しました。保存済みのデータは保持されています。", file=sys.stderr)
+        return 130
+    except Exception as exc:
+        print(f"更新失敗: {exc}", file=sys.stderr)
+        return 1
+    return 0
 
 
 
