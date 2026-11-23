@@ -121,7 +121,9 @@ def migrate_database(source: Path, destination: Path) -> Path:
             raise RuntimeError("移行元とコピー先のDB内容が一致しません")
         if destination.exists():
             raise FileExistsError(destination)
-        os.replace(temporary, destination)
+        # Atomic creation fails if another process has already created the target.
+        os.link(temporary, destination)
+        temporary.unlink()
         return destination
     finally:
         try:
