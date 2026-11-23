@@ -332,19 +332,37 @@ def _run_db_command(action, destination, output_format):
     return 2
 
 
+def _interactive_search(query: str):
+    """Search and return the exact rows shown, so displayed numbers can select them."""
+    try:
+        rows = queries.search_cpus(query, limit=20)
+    except (TypeError, ValueError) as error:
+        print_error(str(error))
+        return None
+    if not rows:
+        print_info(f"「{query}」に一致するCPUが見つかりませんでした。")
+    elif len(rows) == 1:
+        print_cpu_detail(rows[0])
+    else:
+        print_results(rows)
+        print_info("詳細表示: 一覧の番号を入力 / 数字で検索: :s <検索語>")
+    return rows
+
+
 def search_loop(initial_query: str | None = None):
     print_header()
     stats = queries.get_database_stats()
     print_info(f"DB: {stats['cpu_count']:,} 件  最終更新: {stats['last_updated'] or '不明'}")
+    last_results = None
     while True:
         try:
             if initial_query:
                 query = initial_query.strip()
                 initial_query = None
             else:
-                query = (console.input("\n[bold green]検索>[/] ") if RICH else input("\n検索> ")).strip()
+                query = (console.input("\\n[bold green]検索>[/] ") if RICH else input("\\n検索> ")).strip()
         except (KeyboardInterrupt, EOFError):
-            print("\n終了します。")
+            print("\\n終了します。")
             break
         if not query:
             continue
@@ -356,10 +374,21 @@ def search_loop(initial_query: str | None = None):
                 _, code = _run_update_in_adapter(fast=query in (":uf", ":fastupdate"))
                 if code == 130:
                     print_info("更新を中断しました。保存済みデータは保持されています。")
+                last_results = None
             except Exception as error:
                 print_error(f"更新失敗: {error}")
             continue
-        _run_search(query, 20, "text")
+        if query.startswith(":s "):
+            last_results = _interactive_search(query[3:].strip())
+            continue
+        if query.isdecimal() and last_results is not None:
+            index = int(query)
+            if 1 <= index <= len(last_results):
+                print_cpu_detail(last_results[index - 1])
+            else:
+                print_error(f"選択番号が範囲外です。1～{len(last_results)} を指定してください。")
+            continue
+        last_results = _interactive_search(query)
 
 
 def main(argv=None):
