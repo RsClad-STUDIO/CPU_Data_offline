@@ -27,6 +27,7 @@ _brand = passmark._brand
 _parse_cpu_list_html = passmark._parse_cpu_list_html
 _parse_nanoreview_html = nanoreview._parse_nanoreview_html
 _cpu_to_slug = nanoreview._cpu_to_slug
+_nanoreview_url = nanoreview.nanoreview_url
 _parse_specs = nanoreview._parse_specs
 
 
@@ -245,7 +246,7 @@ def run_update(
 
         for index, item in enumerate(cpu_list[start_index:], start=start_index + 1):
             token.raise_if_cancelled()
-            specs = fetch_nanoreview(_cpu_to_slug(item["name"]))
+            specs = fetch_nanoreview(_nanoreview_url(item["name"]))
             token.raise_if_cancelled()
             if specs:
                 record = _parse_specs(
