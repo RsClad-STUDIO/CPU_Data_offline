@@ -52,13 +52,24 @@ python cpu_lookup.py --update
 
 ```bash
 cpu-lookup
-cpu-lookup "i7-13700K"
+cpu-lookup "i7-13700K"                  # 旧形式の対話検索
+cpu-lookup search "i7-13700K"           # 検索
+cpu-lookup search "Ryzen 7" --limit 10 --format json
+cpu-lookup show 123                    # ID指定
+cpu-lookup show "Intel Core i7-13700K"  # CPU名の完全一致
+cpu-lookup stats                       # DB状態
+cpu-lookup db verify                   # SQLite整合性検査
+cpu-lookup db backup "./backup/cpu.db"
 cpu-lookup update --mode fast
 cpu-lookup update --mode full
 cpu-lookup --db-location "D:\CPU_Data"
-cpu-data-update --fast
+cpu-data-update --fast                  # 旧更新エントリポイント
 cpu-data-update --full
 ```
+
+主要なサブコマンドは `--format text|json` に対応します。JSONは `schema_version`、`command`、`ok`、`data`、`warnings` を共通フィールドとし、失敗時は `error.code` と `error.message` を返します。更新進捗・診断は標準エラー出力、JSON結果は標準出力に出力します。
+
+終了コードは成功=0、実行時エラー=1、引数エラー=2、show対象なし／曖昧=3、ユーザー中断=130です。更新時のCtrl+Cはキャンセル要求として更新処理へ渡し、処理済みバッチを保存してから終了します。
 
 ## ソース構成
 
