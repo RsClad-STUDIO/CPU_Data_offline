@@ -144,10 +144,18 @@ def _event_to_stderr(event):
     if isinstance(event, update_service.UpdateStarted):
         print(f"更新開始: mode={event.mode}, total={event.total}, resume={event.start_index}", file=sys.stderr)
     elif isinstance(event, update_service.UpdateProgress):
+        # Full updates may resume partway through the source list. Use the
+        # absolute source position for progress, while fast updates use the
+        # per-run processed count.
+        progress = (
+            event.position
+            if event.mode == "full" and event.position is not None
+            else event.processed
+        )
         interval = max(1, event.total // 20)
-        if event.processed == event.total or event.processed % interval == 0:
+        if progress == event.total or progress % interval == 0:
             print(
-                f"進捗: {event.processed}/{event.total} "
+                f"進捗: {progress}/{event.total} "
                 f"成功={event.succeeded} 詳細なし={event.not_found}",
                 file=sys.stderr,
             )
