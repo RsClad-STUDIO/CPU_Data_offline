@@ -10,19 +10,13 @@ NANOREVIEW = "https://nanoreview.net/en/cpu"
 NANOREVIEW_SOC = "https://nanoreview.net/en/soc"
 
 def _cpu_to_slug(name: str) -> str:
-    """
-    Passmark CPU名 → nanoreview.net URL スラグ
-    例: "Intel Core i7-13700K"       → "intel-core-i7-13700k"
-        "AMD Ryzen 9 7950X"          → "amd-ryzen-9-7950x"
-        "Intel Core i5-4300U @ 1.90GHz" → "intel-core-i5-4300u"
-    """
-    # @以降のクロック表記と括弧内のPassMark補足を除去
-    name = re.sub(r'\s*@.*
+    """Normalize a PassMark CPU name to a NanoReview CPU slug."""
+    name = re.sub(r"\s*@.*$", "", name).strip()
+    name = re.sub(r"\s*\([^)]*\)", "", name).strip()
     name = name.lower()
-    name = re.sub(r'[^a-z0-9\s\-]', '', name)
-    name = re.sub(r'\s+', '-', name).strip('-')
-    name = re.sub(r'-+', '-', name)
-    return name
+    name = re.sub(r"[^a-z0-9\s\-]", "", name)
+    name = re.sub(r"\s+", "-", name).strip("-")
+    return re.sub(r"-+", "-", name)
 
 
 def nanoreview_url(name: str) -> str:
