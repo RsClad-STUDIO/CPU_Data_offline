@@ -55,7 +55,7 @@ cpu-lookup
 cpu-lookup "i7-13700K"
 cpu-lookup update --mode fast
 cpu-lookup update --mode full
-cpu-lookup --db-location "D:\\CPU_Data"
+cpu-lookup --db-location "D:\CPU_Data"
 cpu-data-update --fast
 cpu-data-update --full
 ```
