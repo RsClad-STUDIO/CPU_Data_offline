@@ -208,7 +208,7 @@ class UpdaterParserTests(unittest.TestCase):
              patch.object(updater.time, "sleep"):
             updater.run_update()
 
-        fetch_nano.assert_called_once_with(updater._cpu_to_slug("Intel Core i5-3"))
+        fetch_nano.assert_called_once_with(updater._nanoreview_url("Intel Core i5-3"))
         saved = upsert_many.call_args.args[0]
         self.assertEqual([row["name"] for row in saved], ["Intel Core i5-3"])
         set_meta.assert_any_call("update_in_progress", "false")
