@@ -8,9 +8,10 @@ dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 data/cpu.db
 data/cpu.db-shm
 data/cpu.db-wal
-
 data/*.bak
 data/*.db.pre-v2-*.bak

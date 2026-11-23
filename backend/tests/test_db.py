@@ -6,7 +6,7 @@ from contextlib import closing
 from unittest.mock import patch
 from pathlib import Path
 
-import db
+from cpu_data.infrastructure import database as db
 
 
 class DatabaseTests(unittest.TestCase):

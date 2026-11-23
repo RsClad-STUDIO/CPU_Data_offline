@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Mapping
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _positive_int(env: Mapping[str, str], name: str, default: int) -> int:

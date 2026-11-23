@@ -12,7 +12,7 @@ from pathlib import Path
 from .application import queries
 from .database_location import configure_database, DatabaseSelectionRequired
 from .infrastructure import database as database_store
-from . import updater as update_service
+from .application import update as update_service
 
 try:
     from rich.console import Console
@@ -136,7 +136,7 @@ def ensure_db():
     print("データベースが見つかりません。")
     print("初回データ取得を行うには、次を明示的に実行してください:")
     print("  cpu-lookup update --mode fast")
-    print("または: python cpu_lookup.py --fast")
+    print("または: cpu-lookup --fast")
     return False
 
 

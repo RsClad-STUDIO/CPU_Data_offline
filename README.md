@@ -1,134 +1,98 @@
 # CPU_Data_offline
 
-CPU情報をローカルに保存し、ネットワーク接続がない環境でも検索できるようにするプロジェクトです。
+CPU情報をSQLiteへ保存し、ネットワーク接続がない環境でも検索できるPythonアプリケーションです。現在の実装はCLI版です。将来のPC版・NAS版Webアプリに向け、バックエンドを独立したPythonパッケージとして管理します。
 
-## 現在の実装
+## ディレクトリ構成
 
-現行版はPython製のCLIアプリケーションです。
-
-- PassMark CPU一覧からCPU名・スコアを取得
-- NanoReviewからCPU詳細情報を取得（完全更新時）
-- SQLiteにデータを保存
-- CPU名の部分一致検索
-- Richが利用可能な場合は表形式で表示
+```text
+CPU_Data_offline/
+├─ backend/
+│  ├─ pyproject.toml
+│  ├─ src/cpu_data/
+│  │  ├─ domain/             # CPUモデル・メーカー分類
+│  │  ├─ application/        # 検索・更新ユースケース
+│  │  ├─ infrastructure/    # SQLite・HTTP・外部データソース
+│  │  ├─ cli.py              # CLIアダプター
+│  │  ├─ config.py           # OS別設定
+│  │  └─ database_location.py
+│  └─ tests/                 # バックエンドの自動テスト
+├─ frontend/                 # 将来のUI（未実装）
+├─ deploy/                   # 配備定義（未実装）
+├─ docs/                     # 設計・運用ドキュメント
+├─ scripts/                  # 保守・診断スクリプト
+├─ .gitignore
+└─ README.md
+```
 
 ## 動作環境
 
 - Python 3.10以上
 - Windows / macOS / Linux
-
-これは現在のCLI版の動作環境です。Web/PWA、Android、iOS対応は基盤改修の目標であり、まだ実装済みではありません。
+- SQLite（Python標準ライブラリ）
+- 外部データ取得：PassMark、NanoReview
 
 ## セットアップ
 
-```bash
-python -m venv .venv
-```
+リポジトリのルートで仮想環境を作成し、バックエンドを編集可能モードでインストールします。
 
 Windows PowerShell:
 
 ```powershell
+python -m venv .venv
 .venv\Scripts\Activate.ps1
-python -m pip install -e .
+python -m pip install -e .\backend
 ```
 
 macOS / Linux:
 
 ```bash
+python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e .
+python -m pip install -e ./backend
 ```
 
-## 起動
-
-```bash
-python cpu_lookup.py
-python cpu_lookup.py "i7-13700K"
-python cpu_lookup.py --fast
-python cpu_lookup.py --update
-```
-
-パッケージをインストールした場合は、以下のコマンドも利用できます。
+## 起動・コマンド
 
 ```bash
 cpu-lookup
-cpu-lookup "i7-13700K"                  # 旧形式の対話検索
-cpu-lookup search "i7-13700K"           # 検索
+cpu-lookup "i7-13700K"
 cpu-lookup search "Ryzen 7" --limit 10 --format json
-cpu-lookup show 123                    # ID指定
-cpu-lookup show "Intel Core i7-13700K"  # CPU名の完全一致
-cpu-lookup stats                       # DB状態
-cpu-lookup db verify                   # SQLite整合性検査
+cpu-lookup show 123
+cpu-lookup stats
+cpu-lookup db verify
 cpu-lookup db backup "./backup/cpu.db"
 cpu-lookup update --mode fast
 cpu-lookup update --mode full
-cpu-lookup --db-location "D:\CPU_Data"
-cpu-data-update --fast                  # 旧更新エントリポイント
+```
+
+更新専用エントリポイント：
+
+```bash
+cpu-data-update --fast
 cpu-data-update --full
 ```
 
-主要なサブコマンドは `--format text|json` に対応します。JSONは `schema_version`、`command`、`ok`、`data`、`warnings` を共通フィールドとし、失敗時は `error.code` と `error.message` を返します。更新進捗・診断は標準エラー出力、JSON結果は標準出力に出力します。
+主要サブコマンドは `--format text|json` に対応します。JSONは `schema_version`、`command`、`ok`、`data`、`warnings` を共通フィールドとし、失敗時は `error.code` と `error.message` を返します。更新進捗・診断は標準エラー出力、JSON結果は標準出力に出力します。
 
 終了コードは成功=0、実行時エラー=1、引数エラー=2、show対象なし／曖昧=3、ユーザー中断=130です。更新時のCtrl+Cはキャンセル要求として更新処理へ渡し、処理済みバッチを保存してから終了します。
 
-## ソース構成
+## データ保存先
 
-```text
-cpu_data/
-├─ __init__.py
-├─ config.py                      # OS別パス・実行時設定
-├─ database_location.py           # DB選択・旧DB移行
-├─ cli.py                         # CLI表示・入力
-├─ database.py                    # 旧package import互換ラッパー
-├─ updater.py                     # 旧package import / 起動互換ラッパー
-├─ domain/
-│  ├─ cpu.py                      # CPURecord・データ不変条件
-│  └─ vendors.py                  # メーカー分類ルール
-├─ application/
-│  ├─ queries.py                  # UI非依存の検索・DB参照ユースケース
-│  └─ update.py                   # 更新ユースケース・チェックポイント
-└─ infrastructure/
-   ├─ database.py                 # SQLite永続化
-   ├─ http.py                     # HTTPセッション・再試行
-   └─ sources/
-      ├─ errors.py                # データ取得・解析エラー
-      ├─ passmark.py              # PassMark取得・解析
-      └─ nanoreview.py            # NanoReview取得・正規化
+既定のSQLiteファイルはOS標準のユーザーデータ領域にある `cpu.db` です。
 
-cpu_lookup.py                     # 旧CLI起動パス互換ラッパー
-db.py                             # 旧DB import互換ラッパー
-updater.py                        # 旧更新 import / 起動パス互換ラッパー
-tests/                            # DB・取得パーサー・互換性テスト
-```
+- Windows: `%LOCALAPPDATA%\CPU_Data_offline\cpu.db`
+- macOS: `~/Library/Application Support/CPU_Data_offline/cpu.db`
+- Linux: `$XDG_DATA_HOME/cpu-data-offline/cpu.db`（未設定時 `~/.local/share/cpu-data-offline/cpu.db`）
 
-既存の `python cpu_lookup.py`、`import db`、`import updater` は互換ラッパー経由で維持します。SQLiteファイルの既定位置はOS標準のユーザーデータ領域にある `cpu.db` です。
+環境変数 `CPU_DATA_HOME` を指定すると、そのディレクトリを最優先で使用します。CLIの `--db-location <ディレクトリ>` でも保存先を指定できます。選択した保存先はユーザー設定に記録されます。
 
-- 通常起動：対話検索
-- `--fast`：PassMark一覧のみを更新
-- `--update`：詳細スペックを含めて更新
+既存DBの保存場所・スキーマ移行処理はアプリケーションコード内に維持されています。今回のソースコード再配置ではDBファイルの移動・変換・更新は行いません。
 
-初回起動時、DBが存在しない場合に自動取得は行いません。明示的に `cpu-lookup update --mode fast` または `python cpu_lookup.py --fast` を実行してください。
+## 環境変数
 
-## 設定・データ保存先
-
-既定の保存先はWindowsが `%LOCALAPPDATA%\CPU_Data_offline`、macOSが `~/Library/Application Support/CPU_Data_offline`、Linuxが `$XDG_DATA_HOME/cpu-data-offline`（未設定時 `~/.local/share/cpu-data-offline`）です。DBファイル名はいずれも `cpu.db` です。環境変数 `CPU_DATA_HOME` を指定すると、そのディレクトリを最優先で使用します。`--db-location <ディレクトリ>` で選択した保存先はユーザー設定に記録され、次回起動時も利用されます。旧保存先のDBが見つかった場合は、初回起動時に移行または旧DBの継続利用を選択できます。PC版では各端末のローカル保存先、NAS版ではNAS側の保存先を個別に設定する想定です。PC版とNAS版で同じDBファイルを直接共有する設計ではありません。
-
-Windows PowerShell:
-
-```powershell
-$env:CPU_DATA_HOME = "D:\CPU_Data"
-```
-
-macOS / Linux:
-
-```bash
-export CPU_DATA_HOME="$HOME/.local/share/cpu-data-offline"
-```
-
-その他の調整可能な設定:
-
-| 環境変数 | 既定値 | 用途 |
+| 変数 | 既定値 | 用途 |
 | --- | ---: | --- |
+| `CPU_DATA_HOME` | OS標準 | DB保存先 |
 | `CPU_HTTP_CONNECT_TIMEOUT` | 5 | HTTP接続タイムアウト（秒） |
 | `CPU_HTTP_READ_TIMEOUT` | 20 | HTTP読取タイムアウト（秒） |
 | `CPU_HTTP_RETRIES` | 3 | GET再試行回数 |
@@ -136,56 +100,44 @@ export CPU_DATA_HOME="$HOME/.local/share/cpu-data-offline"
 | `CPU_UPDATE_BATCH_SIZE` | 100 | DBへ一括保存する件数 |
 | `CPU_NANOREVIEW_DELAY` | 0.5 | NanoReviewへのリクエスト間隔（秒） |
 
-## データ保存先・バックアップ
-
-既定のSQLiteファイルはOS標準のユーザーデータ領域にある `cpu.db` です。保存先は `--db-location <ディレクトリ>` で変更でき、選択はユーザー設定に保存されます。`CPU_DATA_HOME` が設定されている場合は最優先です。旧保存先 `data/cpu.db` が見つかった場合は、初回起動時に移行するか旧DBをそのまま使うかを確認します。
-
-スキーマv2より古い既存DBを初期化・移行する前に、SQLiteのbackup APIで自動バックアップを作成します。ファイル名は `cpu.db.pre-v2-<UTC timestamp>.bak` 形式です。移行後はmetaテーブルの `last_migration_backup` に保存先を記録します。
-
-DB層には `backup_database(destination)` と `verify_database()` を用意しています。バックアップ先に既存ファイルがある場合は上書きせずエラーにします。
-
-### 手動復元手順
-
-現時点では復元専用コマンドはありません。バックアップから戻す場合は、必ずアプリを終了してから次の手順でファイルを差し替えてください。
-
-1. 現在の `cpu.db` を別の場所へコピーし、復旧前の状態も保全します。
-2. 復元する `.bak` ファイルを、実際に使用しているデータディレクトリの `cpu.db` としてコピーします。`CPU_DATA_HOME` を設定している場合は、そのディレクトリを対象にします。
-3. 復元したDBに対してSQLiteの整合性検査を実行します。
-
-```bash
-python -c "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); print(c.execute('PRAGMA integrity_check').fetchone()[0]); c.close()" "/path/to/cpu.db"
-```
-
-結果が `ok` であることを確認してからアプリを起動してください。問題があればアプリを起動せず、保全した復旧前DBへ戻してください。
-
 ## テスト
 
-標準ライブラリのunittestを使用します。
+リポジトリルートから実行：
+
+```bash
+python -m unittest discover -s backend/tests -v
+```
+
+またはバックエンドディレクトリから：
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-GitHub Actionsは使用しません。テストは利用者のローカル環境で実行します。
+テストはローカル環境で実行します。GitHub Actionsは使用しません。
+
+## 保守スクリプト
+
+バックエンドをインストールした状態でリポジトリルートから実行します。
+
+```bash
+python scripts/check_database_recovery.py
+python scripts/check_live_sources.py
+```
 
 ## データソース
 
 - [PassMark CPU Benchmarks](https://www.cpubenchmark.net/cpu_list.php)
 - [NanoReview CPU](https://nanoreview.net/en/cpu)
 
-取得元のHTML構造や利用条件は変更される可能性があります。外部サイトへのアクセスは更新処理時に発生します。
+取得元のHTML構造や利用条件は変更される可能性があります。外部サイトへのアクセスは更新処理または明示的な診断時に発生します。
 
-## 開発方針
+## 今後の拡張方針
 
-当面は新機能を追加せず、既存機能の保全、DB整合性、責務分離、自動テスト、クロスプラットフォーム対応、セルフホスト配備の基盤を優先します。
+- `backend/`: CLI・PC版・Web版で共有するアプリケーション基盤
+- `frontend/`: 将来のWeb UI。現時点では未実装
+- `deploy/`: 将来のNAS / セルフホスト配備定義。現時点では未実装
+- `docs/`: アーキテクチャ・運用・開発資料
+- `scripts/`: 保守・診断用ツール
 
-目標とする利用方式（未実装のものを含む）:
-
-- Windows / macOS / Linux：各端末上で独立動作するPC版アプリ
-- スマートフォン・タブレット：NAS上のWebアプリへブラウザーからNAS IP経由でアクセス
-- NAS版WebアプリはLAN / Tailscale等のプライベートネットワーク限定で運用
-- PWAはホーム画面へのインストールやオフライン利用が必要になった段階で追加する任意の拡張
-
-PC版はNASへの接続を必須としません。PC版ローカルDBとNAS版DBの同期・共有方式は未決定です。
-
-設計判断・未解決事項・作業履歴はNotionのプロジェクト技術ナレッジベースで管理します。
+PC版はNAS接続を必須としません。NAS版Webアプリはプライベートネットワーク限定で運用する方針です。PC版ローカルDBとNAS版DBの同期方式は未決定です。設計判断・未解決事項・作業履歴はNotionで管理します。

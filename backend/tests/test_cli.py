@@ -7,7 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from cpu_data import cli, updater
+from cpu_data import cli
+from cpu_data.application import update as updater
 
 
 class CLITests(unittest.TestCase):

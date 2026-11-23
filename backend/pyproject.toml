@@ -6,7 +6,6 @@ build-backend = "setuptools.build_meta"
 name = "cpu-data-offline"
 version = "0.1.0"
 description = "Offline CPU information database and search tool"
-readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "requests>=2.28.0",
@@ -17,7 +16,11 @@ dependencies = [
 
 [project.scripts]
 cpu-lookup = "cpu_data.cli:main"
-cpu-data-update = "cpu_data.updater:main"
+cpu-data-update = "cpu_data.application.update:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["cpu_data*"]

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import requests
 
-import updater
+from cpu_data.application import update as updater
 
 
 PASSMARK_HTML = """
