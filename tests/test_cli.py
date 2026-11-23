@@ -141,5 +141,56 @@ class CLITests(unittest.TestCase):
         search_loop.assert_called_once_with(initial_query="i7-13700K")
 
 
+    def test_interactive_search_number_selects_the_displayed_result(self):
+        rows = [
+            {"id": 101, "name": "Intel Core i7-13700K", "brand": "Intel",
+             "cores": 16, "threads": 24, "tdp": 125, "passmark_score": 46600},
+            {"id": 102, "name": "Intel Core i5-14500", "brand": "Intel",
+             "cores": 14, "threads": 20, "tdp": 65, "passmark_score": 30000},
+        ]
+        with patch.object(cli, "RICH", False), \\
+             patch.object(cli.queries, "get_database_stats", return_value={
+                 "cpu_count": 2, "last_updated": None
+             }), \\
+             patch.object(cli.queries, "search_cpus", return_value=rows) as search, \\
+             patch("builtins.input", side_effect=["13700K", "1", ":q"]), \\
+             patch.object(cli, "print_cpu_detail") as show_detail, \\
+             patch.object(cli, "print_results"):
+            cli.search_loop()
+
+        search.assert_called_once_with("13700K", limit=20)
+        show_detail.assert_called_once_with(rows[0])
+
+    def test_interactive_search_rejects_out_of_range_selection(self):
+        rows = [{"id": 101, "name": "Intel Core i7-13700K", "brand": "Intel",
+                 "cores": 16, "threads": 24, "tdp": 125, "passmark_score": 46600}]
+        with patch.object(cli, "RICH", False), \\
+             patch.object(cli.queries, "get_database_stats", return_value={
+                 "cpu_count": 1, "last_updated": None
+             }), \\
+             patch.object(cli.queries, "search_cpus", return_value=rows), \\
+             patch("builtins.input", side_effect=["13700K", "2", ":q"]), \\
+             patch.object(cli, "print_cpu_detail") as show_detail, \\
+             patch.object(cli, "print_error") as show_error:
+            cli.search_loop()
+
+        show_detail.assert_not_called()
+        show_error.assert_called_once_with("選択番号が範囲外です。1～1 を指定してください。")
+
+    def test_interactive_numeric_search_can_be_forced_with_search_prefix(self):
+        rows = [{"id": 201, "name": "AMD Ryzen 7 7800X3D", "brand": "AMD",
+                 "cores": 8, "threads": 16, "tdp": 120, "passmark_score": 35000}]
+        with patch.object(cli, "RICH", False), \\
+             patch.object(cli.queries, "get_database_stats", return_value={
+                 "cpu_count": 1, "last_updated": None
+             }), \\
+             patch.object(cli.queries, "search_cpus", return_value=rows) as search, \\
+             patch("builtins.input", side_effect=[":s 145", ":q"]), \\
+             patch.object(cli, "print_cpu_detail"):
+            cli.search_loop()
+
+        search.assert_called_once_with("145", limit=20)
+
+
 if __name__ == "__main__":
     unittest.main()
