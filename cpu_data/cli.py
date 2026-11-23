@@ -9,7 +9,7 @@ cpu_lookup.py - CPU情報検索CLIツール
 """
 import sys
 import argparse
-from .database import search_cpus, get_meta, count_cpus
+from .application.queries import search_cpus, get_database_stats
 from .database_location import configure_database, DatabaseSelectionRequired
 from .infrastructure import database as database_store
 
@@ -170,8 +170,9 @@ def ensure_db():
 def search_loop(initial_query: str = None):
     print_header()
 
-    n = count_cpus()
-    last_updated = get_meta("last_updated") or "不明"
+    stats = get_database_stats()
+    n = stats["cpu_count"]
+    last_updated = stats["last_updated"] or "不明"
     print_info(f"DB: {n:,} 件  最終更新: {last_updated}")
 
     while True:
