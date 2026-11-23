@@ -168,13 +168,23 @@ def run_update(
     if delay < 0:
         raise ValueError("request_delay_seconds must not be negative")
 
-    init_db()
-    token.raise_if_cancelled()
-    cpu_list = fetch_cpu_list()
-    if not cpu_list:
-        raise RuntimeError("PassMark returned an empty CPU list")
+    if token.is_cancelled:
+        _emit(event_handler, UpdateCancelled(mode, 0, 0, None))
+        return UpdateResult(mode, "cancelled", 0, 0, 0, 0, None)
+
+    try:
+        init_db()
+        cpu_list = fetch_cpu_list()
+        if not cpu_list:
+            raise RuntimeError("PassMark returned an empty CPU list")
+    except Exception as error:
+        _emit(event_handler, UpdateFailed(mode, 0, 0, error))
+        raise
 
     total = len(cpu_list)
+    if token.is_cancelled:
+        _emit(event_handler, UpdateCancelled(mode, total, 0, None))
+        return UpdateResult(mode, "cancelled", total, 0, 0, 0, count_cpus())
     start_index = 0
     if not fast:
         resume = get_meta("update_in_progress") == "true"
