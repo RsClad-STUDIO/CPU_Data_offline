@@ -294,43 +294,18 @@ def run_update(
 
 
 def main(argv=None):
-    import argparse
+    """Compatibility entry point routed through the CLI adapter."""
     import sys
-    from ..database_location import configure_database, DatabaseSelectionRequired
 
-    parser = argparse.ArgumentParser(description="Update offline CPU database")
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--fast", action="store_true", help="PassMark list and scores only")
-    group.add_argument("--full", action="store_true", help="Fetch detailed specifications")
-    parser.add_argument("--db-location", help="DB directory; CPU_DATA_HOME takes precedence")
-    args = parser.parse_args(argv)
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if "--full" in arguments:
+        arguments[arguments.index("--full")] = "--update"
+    elif "--fast" not in arguments and "--update" not in arguments:
+        arguments.append("--update")
 
-    try:
-        configure_database(
-            db_location=args.db_location,
-            interactive=bool(sys.stdin and sys.stdin.isatty()),
-        )
-    except DatabaseSelectionRequired as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    except Exception as exc:
-        print(f"DB保存先の決定に失敗しました: {exc}", file=sys.stderr)
-        return 1
-
-    try:
-        result = run_update(fast=args.fast)
-    except KeyboardInterrupt:
-        print("更新を中断しました。保存済みのデータは保持されています。", file=sys.stderr)
-        return 130
-    except Exception as exc:
-        print(f"更新失敗: {exc}", file=sys.stderr)
-        return 1
-    if result.status == "cancelled":
-        print("更新を中断しました。保存済みのデータは保持されています。", file=sys.stderr)
-        return 130
-    print(f"更新完了: {result.database_count} 件")
-    return 0
+    from ..cli import main as cli_main
+    return cli_main(arguments)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
