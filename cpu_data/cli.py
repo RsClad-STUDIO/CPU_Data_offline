@@ -401,6 +401,15 @@ def search_loop(initial_query: str | None = None):
             except Exception as error:
                 print_error(f"更新失敗: {error}")
             continue
+        if query == ":b":
+            if last_results is None:
+                print_info("戻れる検索結果がありません。")
+            elif not last_results:
+                print_info("直前の検索結果は0件でした。")
+            else:
+                print_results(last_results)
+                print_info("詳細表示: 一覧の番号を入力 / 数字で検索: :s <検索語>")
+            continue
         if query.startswith(":s "):
             last_results = _interactive_search(query[3:].strip())
             continue
