@@ -16,6 +16,14 @@ class SettingsTests(unittest.TestCase):
         linux = load_settings({}, platform="posix", home=Path("/home/test"))
         self.assertEqual(linux.data_dir, Path("/home/test/.local/share/cpu-data-offline"))
 
+    def test_platform_configuration_directories(self):
+        windows = load_settings({"APPDATA": "/tmp/roaming"}, platform="win32", home=Path("/home/test"))
+        self.assertEqual(windows.config_dir, Path("/tmp/roaming/CPU_Data_offline"))
+        mac = load_settings({}, platform="darwin", home=Path("/Users/test"))
+        self.assertEqual(mac.config_dir, Path("/Users/test/Library/Preferences/CPU_Data_offline"))
+        linux = load_settings({"XDG_CONFIG_HOME": "/tmp/config"}, platform="linux", home=Path("/home/test"))
+        self.assertEqual(linux.config_dir, Path("/tmp/config/cpu-data-offline"))
+
     def test_xdg_data_home_is_respected(self):
         settings = load_settings({"XDG_DATA_HOME": "/mnt/data"}, platform="posix", home=Path("/home/test"))
         self.assertEqual(settings.data_dir, Path("/mnt/data/cpu-data-offline"))
