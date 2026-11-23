@@ -91,11 +91,11 @@ tests/                            # DB・取得パーサー・互換性テスト
 - `--fast`：PassMark一覧のみを更新
 - `--update`：詳細スペックを含めて更新
 
-初回起動時、DBが存在しない場合は高速更新を試みます。
+初回起動時、DBが存在しない場合に自動取得は行いません。明示的に `cpu-lookup --fast` または `python cpu_lookup.py --fast` を実行してください。
 
 ## 設定・データ保存先
 
-既定のSQLiteファイルはプロジェクト直下の `data/cpu.db` です。環境変数 `CPU_DATA_HOME` を指定すると、そのアプリ実行環境内でDBの保存先を任意のディレクトリへ変更できます。PC版では各端末のローカル保存先、NAS版ではNAS側の保存先を個別に設定する想定です。PC版とNAS版で同じDBファイルを直接共有する設計ではありません。
+既定のSQLiteファイルはOS標準のユーザーデータ領域にある `cpu.db` です。環境変数 `CPU_DATA_HOME` を指定すると、そのディレクトリを最優先で使用します。旧保存先のDBが見つかった場合は、初回起動時に移行または旧DBの継続利用を選択できます。PC版では各端末のローカル保存先、NAS版ではNAS側の保存先を個別に設定する想定です。PC版とNAS版で同じDBファイルを直接共有する設計ではありません。
 
 Windows PowerShell:
 
@@ -122,7 +122,7 @@ export CPU_DATA_HOME="$HOME/.local/share/cpu-data-offline"
 
 ## データ保存先・バックアップ
 
-既定のSQLiteファイルはプロジェクト直下の `data/cpu.db` です。`CPU_DATA_HOME` が設定されている場合はそちらを使用します。既定位置から別の保存先へ変更する場合、既存の `cpu.db` は自動移動しないため、初回起動前に手動でコピーしてください。
+既定のSQLiteファイルはOS標準のユーザーデータ領域にある `cpu.db` です。保存先は `--db-location <ディレクトリ>` で変更でき、選択はユーザー設定に保存されます。`CPU_DATA_HOME` が設定されている場合は最優先です。旧保存先 `data/cpu.db` が見つかった場合は、初回起動時に移行するか旧DBをそのまま使うかを確認します。
 
 スキーマv2より古い既存DBを初期化・移行する前に、SQLiteのbackup APIで自動バックアップを作成します。ファイル名は `cpu.db.pre-v2-<UTC timestamp>.bak` 形式です。移行後はmetaテーブルの `last_migration_backup` に保存先を記録します。
 
@@ -150,7 +150,7 @@ python -c "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); print(c.execute('
 python -m unittest discover -s tests -v
 ```
 
-GitHub ActionsではUbuntu / Windows / macOSとPython 3.10 / 3.11 / 3.12の組み合わせでテストします。
+GitHub Actionsは使用しません。テストは利用者のローカル環境で実行します。
 
 ## データソース
 
