@@ -200,6 +200,48 @@ class CLITests(unittest.TestCase):
         show_detail.assert_not_called()
         show_error.assert_called_once_with("選択番号が範囲外です。1～1 を指定してください。")
 
+    def test_back_command_restores_previous_results_without_searching_again(self):
+        rows = [
+            {"id": 101, "name": "Intel Core i7-13700K", "brand": "Intel",
+             "cores": 16, "threads": 24, "tdp": 125, "passmark_score": 46600},
+            {"id": 102, "name": "Intel Core i5-14500", "brand": "Intel",
+             "cores": 14, "threads": 20, "tdp": 65, "passmark_score": 30000},
+        ]
+        with (
+            patch.object(cli, "RICH", False),
+            patch.object(cli.queries, "get_database_stats", return_value={
+                "cpu_count": 2, "last_updated": None
+            }),
+            patch.object(cli.queries, "search_cpus", return_value=rows) as search,
+            patch("builtins.input", side_effect=["145", "1", ":b", "2", ":q"]),
+            patch.object(cli, "print_cpu_detail") as show_detail,
+            patch.object(cli, "print_results") as show_results,
+        ):
+            cli.search_loop()
+
+        search.assert_called_once_with("145", limit=20)
+        self.assertEqual(
+            show_detail.call_args_list,
+            [unittest.mock.call(rows[0]), unittest.mock.call(rows[1])],
+        )
+        self.assertEqual(
+            show_results.call_args_list,
+            [unittest.mock.call(rows), unittest.mock.call(rows)],
+        )
+
+    def test_back_command_without_previous_search_shows_message(self):
+        with (
+            patch.object(cli, "RICH", False),
+            patch.object(cli.queries, "get_database_stats", return_value={
+                "cpu_count": 2, "last_updated": None
+            }),
+            patch("builtins.input", side_effect=[":b", ":q"]),
+            patch.object(cli, "print_info") as show_info,
+        ):
+            cli.search_loop()
+
+        show_info.assert_any_call("戻れる検索結果がありません。")
+
     def test_interactive_numeric_search_can_be_forced_with_search_prefix(self):
         rows = [{"id": 201, "name": "AMD Ryzen 7 7800X3D", "brand": "AMD",
                  "cores": 8, "threads": 16, "tdp": 120, "passmark_score": 35000}]
