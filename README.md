@@ -99,7 +99,7 @@ tests/                            # DB・取得パーサー・互換性テスト
 
 ## 設定・データ保存先
 
-既定の保存先はWindowsが `%LOCALAPPDATA%\\CPU_Data_offline`、macOSが `~/Library/Application Support/CPU_Data_offline`、Linuxが `$XDG_DATA_HOME/cpu-data-offline`（未設定時 `~/.local/share/cpu-data-offline`）です。DBファイル名はいずれも `cpu.db` です。環境変数 `CPU_DATA_HOME` を指定すると、そのディレクトリを最優先で使用します。`--db-location <ディレクトリ>` で選択した保存先はユーザー設定に記録され、次回起動時も利用されます。旧保存先のDBが見つかった場合は、初回起動時に移行または旧DBの継続利用を選択できます。PC版では各端末のローカル保存先、NAS版ではNAS側の保存先を個別に設定する想定です。PC版とNAS版で同じDBファイルを直接共有する設計ではありません。
+既定の保存先はWindowsが `%LOCALAPPDATA%\CPU_Data_offline`、macOSが `~/Library/Application Support/CPU_Data_offline`、Linuxが `$XDG_DATA_HOME/cpu-data-offline`（未設定時 `~/.local/share/cpu-data-offline`）です。DBファイル名はいずれも `cpu.db` です。環境変数 `CPU_DATA_HOME` を指定すると、そのディレクトリを最優先で使用します。`--db-location <ディレクトリ>` で選択した保存先はユーザー設定に記録され、次回起動時も利用されます。旧保存先のDBが見つかった場合は、初回起動時に移行または旧DBの継続利用を選択できます。PC版では各端末のローカル保存先、NAS版ではNAS側の保存先を個別に設定する想定です。PC版とNAS版で同じDBファイルを直接共有する設計ではありません。
 
 Windows PowerShell:
 
