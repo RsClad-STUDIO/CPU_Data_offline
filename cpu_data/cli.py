@@ -143,17 +143,16 @@ def _event_to_stderr(event):
     if isinstance(event, update_service.UpdateStarted):
         print(f"更新開始: mode={event.mode}, total={event.total}, resume={event.start_index}", file=sys.stderr)
     elif isinstance(event, update_service.UpdateProgress):
-        label = {"success": "取得", "not_found": "詳細なし", "skipped": "スキップ"}.get(event.status, event.status)
-        print(
-            f"進捗: {event.processed}/{event.total} {label}: {event.cpu_name}",
-            file=sys.stderr,
-        )
-    elif isinstance(event, update_service.UpdateBatchSaved):
-        print(f"DB保存: {event.saved}件 / checkpoint={event.checkpoint or '-'}", file=sys.stderr)
+        interval = max(1, event.total // 20)
+        if event.processed == event.total or event.processed % interval == 0:
+            print(
+                f"進捗: {event.processed}/{event.total} "
+                f"成功={event.succeeded} 詳細なし={event.not_found}",
+                file=sys.stderr,
+            )
     elif isinstance(event, update_service.UpdateCancelled):
         print(f"更新中断: {event.processed}/{event.total}", file=sys.stderr)
-    elif isinstance(event, update_service.UpdateFailed):
-        print(f"更新失敗: {event.error}", file=sys.stderr)
+
 
 
 def _run_update_in_adapter(fast=False):
@@ -222,7 +221,22 @@ def _cpu_payload(row):
     return dict(row) if row is not None else None
 
 
+def _database_required(command, output_format):
+    if Path(database_store.DB_PATH).is_file():
+        return None
+    message = "データベースがありません。cpu-lookup update --mode fast を実行してください"
+    if output_format == "json":
+        return _json_output(command, False, error={
+            "code": "database_not_found", "message": message
+        })
+    print_error(message)
+    return 1
+
+
 def _run_search(query, limit, output_format):
+    missing = _database_required("search", output_format)
+    if missing is not None:
+        return missing
     try:
         rows = queries.search_cpus(query, limit=limit)
     except (TypeError, ValueError) as error:
@@ -240,6 +254,9 @@ def _run_search(query, limit, output_format):
 
 
 def _run_show(identifier, output_format):
+    missing = _database_required("show", output_format)
+    if missing is not None:
+        return missing
     row = None
     if identifier.isdecimal():
         try:
