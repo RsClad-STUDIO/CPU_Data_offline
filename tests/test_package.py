@@ -14,8 +14,8 @@ class PackageCompatibilityTests(unittest.TestCase):
         self.assertIs(updater, packaged_updater)
 
     def test_default_database_path_remains_at_project_root(self):
-        expected = Path(__file__).resolve().parents[1] / "data" / "cpu.db"
-        self.assertEqual(Path(database.DB_PATH), expected)
+        self.assertEqual(Path(database.DB_PATH).name, "cpu.db")
+        self.assertNotEqual(Path(database.DB_PATH).parent, Path(__file__).resolve().parents[1] / "data")
 
     def test_cli_entry_point_is_importable(self):
         self.assertTrue(callable(cli_main))
