@@ -33,11 +33,11 @@ def get_cpu_by_name(name: str):
     """Return an exact case-insensitive CPU-name match, or None."""
     if not isinstance(name, str) or not name.strip():
         raise ValueError("name must be a non-empty string")
-    wanted = " ".join(name.split()).casefold()
+    wanted = database.normalize_cpu_name(name)
     # Names are unique under the database's normalized name key.
     rows = database.search_cpus(name.strip(), limit=100)
     for row in rows:
-        if " ".join(row["name"].split()).casefold() == wanted:
+        if database.normalize_cpu_name(row["name"]) == wanted:
             return row
     return None
 
@@ -49,7 +49,11 @@ def get_database_stats() -> dict[str, Any]:
         "database_path": str(path),
         "database_exists": path.is_file(),
         "cpu_count": database.count_cpus() if path.is_file() else 0,
-        "schema_version": database._read_schema_version() if path.is_file() else None,
+        "schema_version": (
+            int(database.get_meta("schema_version"))
+            if path.is_file() and database.get_meta("schema_version") is not None
+            else None
+        ),
         "last_updated": database.get_meta("last_updated") if path.is_file() else None,
         "update_mode": database.get_meta("update_mode") if path.is_file() else None,
         "update_in_progress": (
