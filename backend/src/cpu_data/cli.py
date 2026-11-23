@@ -447,6 +447,8 @@ def main(argv=None):
         parser.error("--mode と --fast / --update は併用できません")
     if args.query == "update" and not args.mode:
         parser.error("update コマンドには --mode fast または --mode full が必要です")
+    if args.query == "update" and (args.target or args.extra):
+        parser.error("updateに余分な位置引数は指定できません")
     if args.query is not None and args.query != "update" and (args.fast or args.update):
         parser.error("--fast / --update は引数なしの起動、または update コマンド専用です")
     if args.limit < 1:

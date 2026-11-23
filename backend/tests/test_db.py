@@ -241,5 +241,67 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(before, after)
 
 
+    def test_read_operations_do_not_create_missing_database(self):
+        self.db_path.unlink()
+        with self.assertRaises(FileNotFoundError):
+            db.search_cpus("13700K")
+        with self.assertRaises(FileNotFoundError):
+            db.get_cpu_by_id(1)
+        with self.assertRaises(FileNotFoundError):
+            db.get_meta("schema_version")
+        with self.assertRaises(FileNotFoundError):
+            db.count_cpus()
+        self.assertFalse(self.db_path.exists())
+
+    def test_current_schema_initialization_does_not_rewrite_cpu_rows(self):
+        db.upsert_many([
+            {"name": "CPU A"},
+            {"name": "CPU B"},
+        ])
+        statements = []
+        original_get_connection = db.get_connection
+
+        def traced_connection():
+            connection = original_get_connection()
+            connection.set_trace_callback(statements.append)
+            return connection
+
+        with patch.object(db, "get_connection", side_effect=traced_connection):
+            db.init_db()
+
+        cpu_name_key_updates = [
+            sql for sql in statements
+            if sql.lstrip().upper().startswith("UPDATE CPUS SET NAME_KEY")
+        ]
+        self.assertEqual(cpu_name_key_updates, [])
+
+    def test_backup_failure_cleans_temporary_file_and_keeps_target_absent(self):
+        destination = self.db_path.parent / "failed-backup.db"
+        with patch.object(db, "_backup_to_path", side_effect=OSError("simulated disk error")):
+            with self.assertRaisesRegex(OSError, "simulated disk error"):
+                db.backup_database(destination)
+        self.assertFalse(destination.exists())
+        self.assertEqual(
+            list(self.db_path.parent.glob(".failed-backup.db.*.tmp")),
+            [],
+        )
+
+    def test_backup_does_not_overwrite_destination_created_during_backup(self):
+        destination = self.db_path.parent / "racing-backup.db"
+
+        def create_racing_target(_temporary, target):
+            target.write_text("keep existing file", encoding="utf-8")
+            raise FileExistsError(target)
+
+        with patch.object(db.os, "link", side_effect=create_racing_target):
+            with self.assertRaises(FileExistsError):
+                db.backup_database(destination)
+        self.assertEqual(destination.read_text(encoding="utf-8"), "keep existing file")
+        self.assertEqual(
+            list(self.db_path.parent.glob(".racing-backup.db.*.tmp")),
+            [],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

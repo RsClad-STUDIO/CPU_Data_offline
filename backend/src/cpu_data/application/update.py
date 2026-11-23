@@ -49,6 +49,7 @@ class UpdateProgress:
     status: str  # success, not_found, or skipped
     succeeded: int
     not_found: int
+    position: int
 
 
 @dataclass(frozen=True)
@@ -258,7 +259,8 @@ def run_update(
                 processed += 1
                 succeeded += 1
                 _emit(event_handler, UpdateProgress(
-                    mode, processed, total, item["name"], "success", succeeded, not_found
+                    mode, processed, total, item["name"], "success",
+                    succeeded, not_found, processed
                 ))
                 if len(records) >= BATCH_SIZE:
                     flush_batch()
@@ -290,7 +292,8 @@ def run_update(
             records.append(record)
             processed += 1
             _emit(event_handler, UpdateProgress(
-                mode, index, total, item["name"], status, succeeded, not_found
+                mode, processed, total, item["name"], status,
+                succeeded, not_found, index
             ))
             if len(records) >= BATCH_SIZE:
                 flush_batch()

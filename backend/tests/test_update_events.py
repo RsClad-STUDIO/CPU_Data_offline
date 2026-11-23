@@ -107,5 +107,36 @@ class UpdateEventTests(unittest.TestCase):
         self.assertIsInstance(events[-1], update.UpdateCompleted)
 
 
+    def test_resumed_full_update_progress_count_is_run_relative(self):
+        items = [cpu("CPU A"), cpu("CPU B"), cpu("CPU C"), cpu("CPU D")]
+        events = []
+        meta = {
+            "update_in_progress": "true",
+            "update_checkpoint": "CPU B",
+            "update_cpu_list_fingerprint": update._cpu_list_fingerprint(items),
+        }
+        with patch.object(update, "init_db"), \
+             patch.object(update, "fetch_cpu_list", return_value=items), \
+             patch.object(update, "get_meta", side_effect=lambda key: meta.get(key)), \
+             patch.object(update, "set_meta"), \
+             patch.object(update, "upsert_many"), \
+             patch.object(update, "count_cpus", return_value=4), \
+             patch.object(update, "fetch_nanoreview", return_value={"cores": "4"}), \
+             patch.object(update, "BATCH_SIZE", 1):
+            result = update.run_update(
+                event_handler=events.append,
+                request_delay_seconds=0,
+            )
+
+        progress = [
+            event for event in events
+            if isinstance(event, update.UpdateProgress)
+        ]
+        self.assertEqual(result.processed, 2)
+        self.assertEqual([event.processed for event in progress], [1, 2])
+        self.assertEqual([event.position for event in progress], [3, 4])
+        self.assertEqual([event.total for event in progress], [4, 4])
+
+
 if __name__ == "__main__":
     unittest.main()

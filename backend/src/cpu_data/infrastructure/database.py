@@ -7,6 +7,7 @@ import os
 import re
 from pathlib import Path
 import sqlite3
+import tempfile
 import unicodedata
 
 from ..config import SETTINGS
@@ -52,6 +53,27 @@ def _connection():
     try:
         with conn:
             yield conn
+    finally:
+        conn.close()
+
+
+def get_readonly_connection() -> sqlite3.Connection:
+    """Open an existing database in read-only mode; never create paths or files."""
+    path = Path(DB_PATH).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    conn = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    return conn
+
+
+@contextmanager
+def _readonly_connection():
+    conn = get_readonly_connection()
+    try:
+        yield conn
     finally:
         conn.close()
 
@@ -111,10 +133,22 @@ def _merge(rows):
 def _migrate_name_key(conn):
     if "name_key" not in _columns(conn, "cpus"):
         conn.execute("ALTER TABLE cpus ADD COLUMN name_key TEXT")
-    rows = conn.execute("SELECT * FROM cpus ORDER BY id").fetchall()
+    # Backfill only missing or stale keys. A current schema no longer incurs
+    # one UPDATE per CPU every time init_db() is called.
+    rows = conn.execute(
+        "SELECT id, name, name_key FROM cpus ORDER BY id"
+    ).fetchall()
     for row in rows:
-        key = normalize_cpu_name(row["name"]) if row["name"] and row["name"].strip() else f"__legacy_id__:{row['id']}"
-        conn.execute("UPDATE cpus SET name_key = ? WHERE id = ?", (key, row["id"]))
+        key = (
+            normalize_cpu_name(row["name"])
+            if row["name"] and row["name"].strip()
+            else f"__legacy_id__:{row['id']}"
+        )
+        if row["name_key"] != key:
+            conn.execute(
+                "UPDATE cpus SET name_key = ? WHERE id = ?",
+                (key, row["id"]),
+            )
 
     duplicates = conn.execute("""
         SELECT name_key FROM cpus GROUP BY name_key HAVING COUNT(*) > 1
@@ -155,25 +189,56 @@ def _migrate_name_key(conn):
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_cpus_name_key ON cpus(name_key)")
 
 
+def _backup_to_path(source: sqlite3.Connection, destination: Path) -> None:
+    """Write a SQLite online backup to a new temporary destination file."""
+    destination_connection = sqlite3.connect(destination)
+    try:
+        source.backup(destination_connection)
+    finally:
+        destination_connection.close()
+
+
 def backup_database(destination) -> Path:
-    """Create a consistent SQLite backup without overwriting an existing file."""
+    """Create and validate a backup, publishing it atomically without overwrite."""
     target = Path(destination).expanduser().resolve()
     source_path = Path(DB_PATH).expanduser().resolve()
     if target == source_path:
         raise ValueError("Backup destination must differ from the active database")
-    if not source_path.exists():
+    if not source_path.is_file():
         raise FileNotFoundError(source_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         raise FileExistsError(target)
 
-    with _connection() as source:
-        destination_connection = sqlite3.connect(target)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
+    )
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    try:
+        with _connection() as source:
+            _backup_to_path(source, temporary)
+
+        # Validate the completed temporary backup before publishing it.
+        with closing(sqlite3.connect(
+            temporary.as_uri() + "?mode=ro", uri=True
+        )) as verification:
+            result = verification.execute("PRAGMA integrity_check").fetchone()
+            if not result or result[0] != "ok":
+                raise sqlite3.DatabaseError(
+                    f"Backup integrity check failed: {result[0] if result else 'no result'}"
+                )
+
+        # A same-directory hard link is an atomic create-if-absent operation.
+        # Unlike os.replace(), it cannot overwrite a destination created by
+        # another process after the initial existence check.
+        os.link(temporary, target)
+        return target
+    finally:
         try:
-            source.backup(destination_connection)
-        finally:
-            destination_connection.close()
-    return target
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def verify_database() -> tuple[bool, str]:
@@ -358,7 +423,7 @@ def search_cpus(query: str, limit: int = 20):
     if not isinstance(limit, int) or limit < 1:
         raise ValueError("limit must be a positive integer")
     escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    with _connection() as conn:
+    with _readonly_connection() as conn:
         return conn.execute("""
             SELECT * FROM cpus
             WHERE name LIKE ? ESCAPE '\\'
@@ -369,7 +434,7 @@ def search_cpus(query: str, limit: int = 20):
 
 
 def get_cpu_by_id(cpu_id: int):
-    with _connection() as conn:
+    with _readonly_connection() as conn:
         return conn.execute("SELECT * FROM cpus WHERE id = ?", (cpu_id,)).fetchone()
 
 
@@ -417,13 +482,13 @@ def set_meta(key: str, value: str):
 
 
 def get_meta(key: str):
-    with _connection() as conn:
+    with _readonly_connection() as conn:
         row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else None
 
 
 def count_cpus() -> int:
-    with _connection() as conn:
+    with _readonly_connection() as conn:
         return conn.execute("SELECT COUNT(*) FROM cpus").fetchone()[0]
 
 

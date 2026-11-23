@@ -68,5 +68,15 @@ class ApplicationQueryTests(unittest.TestCase):
         self.assertTrue(backup.is_file())
 
 
+    def test_read_queries_do_not_create_missing_database_or_parent_directory(self):
+        with self.assertRaises(FileNotFoundError):
+            queries.search_cpus("13700K")
+        with self.assertRaises(FileNotFoundError):
+            queries.get_cpu_by_id(1)
+        with self.assertRaises(FileNotFoundError):
+            queries.get_cpu_by_name("Intel Core i7-13700K")
+        self.assertFalse(self.db_path.exists())
+        self.assertFalse(self.db_path.parent.exists() is False and self.root.exists())
+
 if __name__ == "__main__":
     unittest.main()

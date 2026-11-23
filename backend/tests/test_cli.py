@@ -262,5 +262,16 @@ class CLITests(unittest.TestCase):
         search.assert_called_once_with("145", limit=20)
 
 
+    def test_update_subcommand_rejects_extra_positional_arguments(self):
+        for args in (
+            ["cpu_lookup.py", "update", "unexpected", "--mode", "fast"],
+            ["cpu_lookup.py", "update", "--mode", "full", "unexpected", "another"],
+        ):
+            with self.subTest(args=args), patch.object(sys, "argv", args):
+                with self.assertRaises(SystemExit) as raised:
+                    cli.main()
+            self.assertEqual(raised.exception.code, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
