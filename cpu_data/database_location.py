@@ -7,7 +7,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 
-from .config import PROJECT_ROOT, SETTINGS
+from .config import PROJECT_ROOT, SETTINGS, load_settings
 from .infrastructure import database
 
 LEGACY_DB_PATH = (PROJECT_ROOT / "data" / "cpu.db").resolve()
@@ -148,7 +148,8 @@ def _ask_choice(prompt: str, choices: tuple[str, ...], interactive: bool) -> str
 def resolve_database_path(db_location: str | None = None, interactive: bool = True) -> Path:
     """Choose the active DB path, asking before legacy selection or migration."""
     if os.environ.get("CPU_DATA_HOME"):
-        return SETTINGS.db_path
+        # Resolve the environment override at call time, not module import time.
+        return load_settings().db_path
 
     if db_location:
         selected_dir = Path(db_location).expanduser()
