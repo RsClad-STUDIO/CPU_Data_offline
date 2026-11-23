@@ -17,10 +17,18 @@ class CLITests(unittest.TestCase):
 
     def test_update_failure_returns_nonzero_exit(self):
         with patch.object(sys, "argv", ["cpu_lookup.py", "--update"]), \
+             patch.object(cli, "configure_database"), \
              patch.object(updater, "run_update", side_effect=RuntimeError("source unavailable")):
             with self.assertRaises(SystemExit) as raised:
                 cli.main()
         self.assertEqual(raised.exception.code, 1)
+
+    def test_explicit_update_subcommand_supports_mode(self):
+        with patch.object(sys, "argv", ["cpu_lookup.py", "update", "--mode", "full"]), \
+             patch.object(cli, "configure_database"), \
+             patch.object(updater, "run_update") as run_update:
+            cli.main()
+        run_update.assert_called_once_with(fast=False)
 
     def test_missing_database_does_not_trigger_automatic_download(self):
         with tempfile.TemporaryDirectory() as directory:
