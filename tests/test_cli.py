@@ -53,11 +53,15 @@ class CLITests(unittest.TestCase):
     def test_search_json_uses_application_query_service(self):
         row = {"id": 1, "name": "Intel Core i7-13700K", "passmark_score": 46600}
         output = io.StringIO()
-        with patch.object(sys, "argv", ["cpu_lookup.py", "search", "13700K", "--format", "json"]), \
-             patch.object(cli, "configure_database"), \
-             patch.object(cli.queries, "search_cpus", return_value=[row]) as search, \
-             patch("sys.stdout", output):
-            code = cli.main()
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpu.db"
+            db_path.touch()
+            with patch.object(sys, "argv", ["cpu_lookup.py", "search", "13700K", "--format", "json"]), \
+                 patch.object(cli, "configure_database"), \
+                 patch.object(cli.database_store, "DB_PATH", db_path), \
+                 patch.object(cli.queries, "search_cpus", return_value=[row]) as search, \
+                 patch("sys.stdout", output):
+                code = cli.main()
         payload = json.loads(output.getvalue())
         self.assertEqual(code, 0)
         self.assertTrue(payload["ok"])
@@ -66,12 +70,16 @@ class CLITests(unittest.TestCase):
 
     def test_show_json_returns_not_found_envelope(self):
         output = io.StringIO()
-        with patch.object(sys, "argv", ["cpu_lookup.py", "show", "missing", "--format", "json"]), \
-             patch.object(cli, "configure_database"), \
-             patch.object(cli.queries, "get_cpu_by_name", return_value=None), \
-             patch.object(cli.queries, "search_cpus", return_value=[]), \
-             patch("sys.stdout", output):
-            code = cli.main()
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpu.db"
+            db_path.touch()
+            with patch.object(sys, "argv", ["cpu_lookup.py", "show", "missing", "--format", "json"]), \
+                 patch.object(cli, "configure_database"), \
+                 patch.object(cli.database_store, "DB_PATH", db_path), \
+                 patch.object(cli.queries, "get_cpu_by_name", return_value=None), \
+                 patch.object(cli.queries, "search_cpus", return_value=[]), \
+                 patch("sys.stdout", output):
+                code = cli.main()
         payload = json.loads(output.getvalue())
         self.assertEqual(code, 1)
         self.assertFalse(payload["ok"])
