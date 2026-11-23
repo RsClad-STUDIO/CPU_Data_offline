@@ -227,7 +227,11 @@ def run_update(
             flush_batch()
             set_meta("last_updated", datetime.datetime.now().isoformat())
             set_meta("update_mode", "fast")
-            return UpdateResult(mode, "completed", total, processed, succeeded, not_found, count_cpus())
+            result = UpdateResult(mode, "completed", total, processed, succeeded, not_found, count_cpus())
+            _emit(event_handler, UpdateCompleted(
+                mode, total, processed, succeeded, not_found, result.database_count
+            ))
+            return result
 
         for index, item in enumerate(cpu_list[start_index:], start=start_index + 1):
             token.raise_if_cancelled()
