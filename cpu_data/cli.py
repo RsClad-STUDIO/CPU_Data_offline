@@ -360,9 +360,9 @@ def search_loop(initial_query: str | None = None):
                 query = initial_query.strip()
                 initial_query = None
             else:
-                query = (console.input("\\n[bold green]検索>[/] ") if RICH else input("\\n検索> ")).strip()
+                query = (console.input("\n[bold green]検索>[/] ") if RICH else input("\n検索> ")).strip()
         except (KeyboardInterrupt, EOFError):
-            print("\\n終了します。")
+            print("\n終了します。")
             break
         if not query:
             continue
