@@ -11,7 +11,7 @@ class ApplicationQueryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.db_path = self.root / "cpu.db"
+        self.db_path = self.root / "missing" / "cpu.db"
         self.patch = patch.object(database, "DB_PATH", self.db_path)
         self.patch.start()
 
@@ -75,8 +75,9 @@ class ApplicationQueryTests(unittest.TestCase):
             queries.get_cpu_by_id(1)
         with self.assertRaises(FileNotFoundError):
             queries.get_cpu_by_name("Intel Core i7-13700K")
+        self.assertTrue(self.root.exists())
         self.assertFalse(self.db_path.exists())
-        self.assertFalse(self.db_path.parent.exists() is False and self.root.exists())
+        self.assertFalse(self.db_path.parent.exists())
 
 if __name__ == "__main__":
     unittest.main()

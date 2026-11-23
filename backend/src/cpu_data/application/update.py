@@ -49,7 +49,7 @@ class UpdateProgress:
     status: str  # success, not_found, or skipped
     succeeded: int
     not_found: int
-    position: int
+    position: int | None = None
 
 
 @dataclass(frozen=True)
