@@ -81,7 +81,7 @@ class CLITests(unittest.TestCase):
                  patch("sys.stdout", output):
                 code = cli.main()
         payload = json.loads(output.getvalue())
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 3)
         self.assertFalse(payload["ok"])
         self.assertEqual(payload["error"]["code"], "not_found")
 
@@ -120,6 +120,17 @@ class CLITests(unittest.TestCase):
         payload = json.loads(output.getvalue())
         self.assertEqual(code, 0)
         self.assertEqual(payload["data"]["backup_path"], str(destination))
+
+
+    def test_legacy_update_entrypoint_routes_fast_mode_through_cli(self):
+        with patch("cpu_data.cli.main", return_value=0) as cli_main:
+            self.assertEqual(updater.main(["--fast"]), 0)
+        cli_main.assert_called_once_with(["--fast"])
+
+    def test_legacy_update_entrypoint_defaults_to_full_update(self):
+        with patch("cpu_data.cli.main", return_value=0) as cli_main:
+            self.assertEqual(updater.main([]), 0)
+        cli_main.assert_called_once_with(["--update"])
 
     def test_legacy_query_remains_interactive_search(self):
         with patch.object(sys, "argv", ["cpu_lookup.py", "i7-13700K"]), \
