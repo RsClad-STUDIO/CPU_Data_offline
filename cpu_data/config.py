@@ -1,5 +1,6 @@
 """Centralized, cross-platform application settings."""
 from dataclasses import dataclass
+import math
 import os
 import sys
 from pathlib import Path
@@ -17,8 +18,8 @@ def _positive_int(env: Mapping[str, str], name: str, default: int) -> int:
 
 def _nonnegative_int(env: Mapping[str, str], name: str, default: int) -> int:
     value = int(env.get(name, default))
-    if value < 0:
-        raise ValueError(f"{name} must not be negative")
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(f"{name} must be a finite, non-negative number")
     return value
 
 

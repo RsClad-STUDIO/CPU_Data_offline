@@ -97,6 +97,9 @@ class SettingsTests(unittest.TestCase):
             load_settings({"CPU_UPDATE_BATCH_SIZE": "0"})
         with self.assertRaises(ValueError):
             load_settings({"CPU_NANOREVIEW_DELAY": "-1"})
+        for value in ("nan", "inf", "-inf"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                load_settings({"CPU_HTTP_RETRY_BACKOFF": value})
 
 
 if __name__ == "__main__":

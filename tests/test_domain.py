@@ -35,6 +35,14 @@ class CPURecordTests(unittest.TestCase):
             CPURecord.from_mapping({"name": "CPU", "passmark_score": True})
 
 
+    def test_fractional_passmark_score_is_rejected_without_truncation(self):
+        with self.assertRaises(ValueError):
+            CPURecord.from_mapping({"name": "CPU", "passmark_score": 123.75})
+        self.assertEqual(
+            CPURecord.from_mapping({"name": "CPU", "passmark_score": 123.0}).passmark_score,
+            123,
+        )
+
     def test_vendor_classification_is_shared_and_explicit(self):
         self.assertEqual(classify_vendor("AMD Ryzen 9 7950X"), "AMD")
         self.assertEqual(classify_vendor("Intel Core i7-13700K"), "Intel")

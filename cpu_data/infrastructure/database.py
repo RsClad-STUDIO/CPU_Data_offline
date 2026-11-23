@@ -177,10 +177,28 @@ def backup_database(destination) -> Path:
 
 
 def verify_database() -> tuple[bool, str]:
-    """Run SQLite's integrity_check and return (is_valid, result_text)."""
-    with _connection() as conn:
-        result = conn.execute("PRAGMA integrity_check").fetchone()[0]
-    return result == "ok", result
+    """Check an existing initialized SQLite database without creating or modifying it."""
+    path = Path(DB_PATH).expanduser().resolve()
+    if not path.is_file():
+        return False, "database_not_found"
+    uri = path.as_uri() + "?mode=ro"
+    try:
+        with closing(sqlite3.connect(uri, uri=True)) as conn:
+            result = conn.execute("PRAGMA integrity_check").fetchone()
+            message = result[0] if result else "no_result"
+            if message != "ok":
+                return False, message
+            tables = {row[0] for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
+            if not {"cpus", "meta"}.issubset(tables):
+                return False, "schema_missing"
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(cpus)")}
+            if not {"id", "name", "name_key", "passmark_score"}.issubset(columns):
+                return False, "schema_invalid"
+            return True, "ok"
+    except sqlite3.DatabaseError as error:
+        return False, str(error)
 
 
 def _read_schema_version():
@@ -327,4 +345,17 @@ def count_cpus() -> int:
 
 
 def db_exists() -> bool:
-    return os.path.exists(DB_PATH) and count_cpus() > 0
+    """Return whether an initialized database contains CPU records, without creating it."""
+    path = Path(DB_PATH).expanduser().resolve()
+    if not path.is_file():
+        return False
+    try:
+        with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as conn:
+            has_table = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cpus'"
+            ).fetchone()
+            if not has_table:
+                return False
+            return conn.execute("SELECT COUNT(*) FROM cpus").fetchone()[0] > 0
+    except sqlite3.DatabaseError:
+        return False

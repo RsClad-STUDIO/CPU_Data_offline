@@ -81,6 +81,27 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(db.get_meta("last_updated"), "2026-11-23")
 
 
+    def test_verify_missing_database_does_not_create_file(self):
+        self.db_path.unlink()
+        valid, result = db.verify_database()
+        self.assertFalse(valid)
+        self.assertEqual(result, "database_not_found")
+        self.assertFalse(self.db_path.exists())
+
+    def test_verify_rejects_empty_database_file_without_modifying_it(self):
+        self.db_path.unlink()
+        self.db_path.touch()
+        valid, result = db.verify_database()
+        self.assertFalse(valid)
+        self.assertEqual(result, "schema_missing")
+        self.assertEqual(self.db_path.stat().st_size, 0)
+
+    def test_db_exists_handles_empty_database_without_creating_tables(self):
+        self.db_path.unlink()
+        self.db_path.touch()
+        self.assertFalse(db.db_exists())
+        self.assertEqual(self.db_path.stat().st_size, 0)
+
     def test_backup_and_integrity_check(self):
         db.upsert_cpu({"name": "Test CPU", "passmark_score": 1234})
         backup_path = self.db_path.parent / "backup.db"

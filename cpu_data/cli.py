@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 import threading
 from pathlib import Path
@@ -241,6 +242,9 @@ def _run_search(query, limit, output_format):
         rows = queries.search_cpus(query, limit=limit)
     except (TypeError, ValueError) as error:
         return _json_output("search", False, error={"code": "invalid_query", "message": str(error)}, exit_code=2) if output_format == "json" else (print_error(str(error)) or 2)
+    except sqlite3.DatabaseError as error:
+        message = f"データベースを読み取れません: {error}"
+        return _json_output("search", False, error={"code": "database_error", "message": message}) if output_format == "json" else (print_error(message) or 1)
     data = [_cpu_payload(row) for row in rows]
     if output_format == "json":
         return _json_output("search", True, data={"items": data, "count": len(data)})
@@ -258,13 +262,17 @@ def _run_show(identifier, output_format):
     if missing is not None:
         return missing
     row = None
-    if identifier.isdecimal():
-        try:
-            row = queries.get_cpu_by_id(int(identifier))
-        except ValueError:
-            row = None
-    else:
-        row = queries.get_cpu_by_name(identifier)
+    try:
+        if identifier.isdecimal():
+            try:
+                row = queries.get_cpu_by_id(int(identifier))
+            except ValueError:
+                row = None
+        else:
+            row = queries.get_cpu_by_name(identifier)
+    except sqlite3.DatabaseError as error:
+        message = f"データベースを読み取れません: {error}"
+        return _json_output("show", False, error={"code": "database_error", "message": message}) if output_format == "json" else (print_error(message) or 1)
     if row is not None:
         data = _cpu_payload(row)
         if output_format == "json":
@@ -272,9 +280,13 @@ def _run_show(identifier, output_format):
         print_cpu_detail(row)
         return 0
 
-    candidates = [] if identifier.isdecimal() else [
-        _cpu_payload(item) for item in queries.search_cpus(identifier, limit=20)
-    ]
+    try:
+        candidates = [] if identifier.isdecimal() else [
+            _cpu_payload(item) for item in queries.search_cpus(identifier, limit=20)
+        ]
+    except sqlite3.DatabaseError as error:
+        message = f"データベースを読み取れません: {error}"
+        return _json_output("show", False, error={"code": "database_error", "message": message}) if output_format == "json" else (print_error(message) or 1)
     if output_format == "json":
         return _json_output(
             "show", False,
@@ -294,7 +306,11 @@ def _run_show(identifier, output_format):
 
 
 def _run_stats(output_format):
-    data = queries.get_database_stats()
+    try:
+        data = queries.get_database_stats()
+    except (sqlite3.DatabaseError, ValueError) as error:
+        message = f"データベース状態を取得できません: {error}"
+        return _json_output("stats", False, error={"code": "database_error", "message": message}) if output_format == "json" else (print_error(message) or 1)
     if output_format == "json":
         return _json_output("stats", True, data=data)
     for key, value in data.items():
@@ -336,6 +352,9 @@ def _interactive_search(query: str):
     """Search and return the exact rows shown, so displayed numbers can select them."""
     try:
         rows = queries.search_cpus(query, limit=20)
+    except sqlite3.DatabaseError as error:
+        print_error(f"データベースを読み取れません: {error}")
+        return None
     except (TypeError, ValueError) as error:
         print_error(str(error))
         return None
@@ -351,7 +370,11 @@ def _interactive_search(query: str):
 
 def search_loop(initial_query: str | None = None):
     print_header()
-    stats = queries.get_database_stats()
+    try:
+        stats = queries.get_database_stats()
+    except (sqlite3.DatabaseError, ValueError) as error:
+        print_error(f"データベース状態を取得できません: {error}")
+        return
     print_info(f"DB: {stats['cpu_count']:,} 件  最終更新: {stats['last_updated'] or '不明'}")
     last_results = None
     while True:
@@ -415,6 +438,8 @@ def main(argv=None):
         parser.error("--mode と --fast / --update は併用できません")
     if args.query == "update" and not args.mode:
         parser.error("update コマンドには --mode fast または --mode full が必要です")
+    if args.query is not None and args.query != "update" and (args.fast or args.update):
+        parser.error("--fast / --update は引数なしの起動、または update コマンド専用です")
     if args.limit < 1:
         parser.error("--limit は1以上を指定してください")
     if args.query == "db" and args.target not in ("verify", "backup"):
@@ -478,7 +503,7 @@ def main(argv=None):
         print_info(f"更新完了: DB {result.database_count}件")
         return 0
 
-    if args.query is None and not ensure_db():
+    if not ensure_db():
         return 1
     search_loop(initial_query=args.query)
     return 0

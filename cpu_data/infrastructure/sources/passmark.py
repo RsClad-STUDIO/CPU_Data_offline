@@ -1,5 +1,6 @@
 """PassMark CPU list acquisition and deterministic HTML parsing."""
 import re
+import sys
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from ..http import get as _default_get
@@ -42,8 +43,8 @@ def _parse_cpu_list_html(html: str) -> list:
 
 def fetch_cpu_list(get=_default_get) -> list:
     """Fetch CPU names, scores, and detail URLs for all vendors."""
-    print(f"[PassMark] CPU一覧取得中: {CPU_LIST_URL}")
+    print(f"[PassMark] CPU一覧取得中: {CPU_LIST_URL}", file=sys.stderr)
     response = get(CPU_LIST_URL)
     results = _parse_cpu_list_html(response.text)
-    print(f"[PassMark] {len(results)} 件取得")
+    print(f"[PassMark] {len(results)} 件取得", file=sys.stderr)
     return results

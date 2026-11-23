@@ -85,6 +85,7 @@ cpu_data/
 │  ├─ cpu.py                      # CPURecord・データ不変条件
 │  └─ vendors.py                  # メーカー分類ルール
 ├─ application/
+│  ├─ queries.py                  # UI非依存の検索・DB参照ユースケース
 │  └─ update.py                   # 更新ユースケース・チェックポイント
 └─ infrastructure/
    ├─ database.py                 # SQLite永続化

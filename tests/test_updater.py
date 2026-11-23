@@ -1,4 +1,6 @@
+import io
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -51,6 +53,16 @@ class UpdaterParserTests(unittest.TestCase):
         self.assertEqual(rows[0]["passmark_score"], 62116)
         self.assertEqual(rows[0]["detail_url"], "https://www.cpubenchmark.net/cpu.php?cpu=AMD+Ryzen+9+7950X")
         self.assertIsNone(rows[2]["passmark_score"])
+
+    def test_passmark_progress_is_written_to_stderr_not_stdout(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        response = SimpleNamespace(text=PASSMARK_HTML)
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            rows = updater.fetch_cpu_list(get=lambda _url: response)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("[PassMark] CPU一覧取得中", stderr.getvalue())
 
     def test_cpu_list_rejects_unrecognized_html(self):
         with self.assertRaises(updater.DataSourceParseError):

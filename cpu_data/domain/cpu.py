@@ -40,8 +40,11 @@ class CPURecord:
             if isinstance(score, bool):
                 raise ValueError("PassMark score must be an integer or None")
             try:
-                score = int(score)
-            except (TypeError, ValueError) as error:
+                converted_score = int(score)
+                if not isinstance(score, str) and score != converted_score:
+                    raise ValueError("PassMark score must be an integer or None")
+                score = converted_score
+            except (TypeError, ValueError, OverflowError) as error:
                 raise ValueError("PassMark score must be an integer or None") from error
 
         string_fields = (

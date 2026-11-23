@@ -17,6 +17,29 @@ class CLITests(unittest.TestCase):
                 cli.main()
         self.assertEqual(raised.exception.code, 2)
 
+    def test_update_flags_are_rejected_with_other_commands(self):
+        for args in (
+            ["cpu_lookup.py", "search", "13700K", "--fast"],
+            ["cpu_lookup.py", "stats", "--update"],
+            ["cpu_lookup.py", "i7-13700K", "--fast"],
+        ):
+            with self.subTest(args=args), patch.object(sys, "argv", args):
+                with self.assertRaises(SystemExit) as raised:
+                    cli.main()
+            self.assertEqual(raised.exception.code, 2)
+
+    def test_legacy_search_does_not_create_or_query_a_missing_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing" / "cpu.db"
+            with patch.object(sys, "argv", ["cpu_lookup.py", "i7-13700K"]), \
+                 patch.object(cli, "configure_database"), \
+                 patch.object(cli.database_store, "DB_PATH", missing), \
+                 patch.object(cli, "search_loop") as search_loop, \
+                 patch("sys.stdout", new_callable=io.StringIO):
+                self.assertEqual(cli.main(), 1)
+            search_loop.assert_not_called()
+            self.assertFalse(missing.exists())
+
     def test_update_failure_returns_nonzero_exit(self):
         with patch.object(sys, "argv", ["cpu_lookup.py", "--update"]), \
              patch.object(cli, "configure_database"), \

@@ -6,7 +6,6 @@ return application data or raise exceptions; they never print or prompt.
 from __future__ import annotations
 
 from pathlib import Path
-import sqlite3
 from typing import Any
 
 from ..infrastructure import database
@@ -64,20 +63,8 @@ def get_database_stats() -> dict[str, Any]:
 
 
 def verify_database() -> tuple[bool, str]:
-    """Check an existing database read-only; never create a missing database."""
-    path = Path(database.DB_PATH).expanduser().resolve()
-    if not path.is_file():
-        return False, "database_not_found"
-    uri = path.as_uri() + "?mode=ro"
-    connection = sqlite3.connect(uri, uri=True)
-    try:
-        result = connection.execute("PRAGMA integrity_check").fetchone()
-        message = result[0] if result else "no_result"
-        return message == "ok", message
-    except sqlite3.DatabaseError as exc:
-        return False, str(exc)
-    finally:
-        connection.close()
+    """Check an existing initialized database without creating or modifying it."""
+    return database.verify_database()
 
 
 def backup_database(destination: str | Path) -> Path:
