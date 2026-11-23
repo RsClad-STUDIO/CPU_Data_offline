@@ -35,6 +35,8 @@ def _save_path(path: Path) -> None:
     if SETTINGS_FILE.exists():
         try:
             existing = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            if not isinstance(existing, dict):
+                raise ValueError("settings root must be an object")
         except (OSError, ValueError):
             raise RuntimeError(f"既存の設定ファイルが破損しているため更新できません: {SETTINGS_FILE}")
     existing["database_path"] = str(path.resolve())
@@ -57,7 +59,8 @@ def _save_path(path: Path) -> None:
 def _validate_database(path: Path) -> tuple[int, int]:
     """Return (schema version, CPU row count) without modifying the database."""
     uri = path.resolve().as_uri() + "?mode=ro"
-    with sqlite3.connect(uri, uri=True) as conn:
+    conn = sqlite3.connect(uri, uri=True)
+    try:
         result = conn.execute("PRAGMA integrity_check").fetchone()
         if not result or result[0] != "ok":
             raise RuntimeError(f"SQLite integrity_check failed: {result[0] if result else 'no result'}")
@@ -83,6 +86,8 @@ def _validate_database(path: Path) -> tuple[int, int]:
                 f"{database.SCHEMA_VERSION} より新しいため使用できません"
             )
         return version, count
+    finally:
+        conn.close()
 
 
 def migrate_database(source: Path, destination: Path) -> Path:
@@ -103,14 +108,17 @@ def migrate_database(source: Path, destination: Path) -> Path:
     os.close(fd)
     temporary = Path(temporary_name)
     try:
-        with sqlite3.connect(source.as_uri() + "?mode=ro", uri=True) as src:
-            with sqlite3.connect(temporary) as dst:
-                src.backup(dst)
+        src = sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)
+        dst = sqlite3.connect(temporary)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
         source_version, source_count = _validate_database(source)
         copied_version, copied_count = _validate_database(temporary)
         if (source_version, source_count) != (copied_version, copied_count):
             raise RuntimeError("移行元とコピー先のDB内容が一致しません")
-        # Re-check immediately before activation; never overwrite a DB created meanwhile.
         if destination.exists():
             raise FileExistsError(destination)
         os.replace(temporary, destination)
@@ -137,7 +145,6 @@ def _ask_choice(prompt: str, choices: tuple[str, ...], interactive: bool) -> str
 
 def resolve_database_path(db_location: str | None = None, interactive: bool = True) -> Path:
     """Choose the active DB path, asking before legacy selection or migration."""
-    # An explicit environment override always wins, including over CLI and saved settings.
     if os.environ.get("CPU_DATA_HOME"):
         return SETTINGS.db_path
 
@@ -192,5 +199,5 @@ def resolve_database_path(db_location: str | None = None, interactive: bool = Tr
 
 def configure_database(db_location: str | None = None, interactive: bool = True) -> Path:
     path = resolve_database_path(db_location=db_location, interactive=interactive)
-    database.configure_db_path(path)
+    database.DB_PATH = path
     return path
