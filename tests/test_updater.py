@@ -58,8 +58,9 @@ class UpdaterParserTests(unittest.TestCase):
         stdout = io.StringIO()
         stderr = io.StringIO()
         response = SimpleNamespace(text=PASSMARK_HTML)
-        with redirect_stdout(stdout), redirect_stderr(stderr):
-            rows = updater.fetch_cpu_list(get=lambda _url: response)
+        with patch.object(updater, "_get", return_value=response):
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                rows = updater.fetch_cpu_list()
         self.assertEqual(len(rows), 3)
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("[PassMark] CPU一覧取得中", stderr.getvalue())
