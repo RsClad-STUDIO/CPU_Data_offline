@@ -66,16 +66,22 @@ def inspect_database(path: Path) -> dict[str, object]:
         integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
         columns = {row[1] for row in conn.execute("PRAGMA table_info(cpus)")}
         count = conn.execute("SELECT COUNT(*) FROM cpus").fetchone()[0]
-        version_row = conn.execute(
-            "SELECT value FROM meta WHERE key = 'schema_version'"
+        has_meta = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'"
+        ).fetchone()
+        version_row = (
+            conn.execute(
+                "SELECT value FROM meta WHERE key = 'schema_version'"
+            ).fetchone()
+            if has_meta else None
+        )
+        has_archive = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='cpus_duplicate_archive'"
         ).fetchone()
         archive_count = (
             conn.execute("SELECT COUNT(*) FROM cpus_duplicate_archive").fetchone()[0]
-            if conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' "
-                "AND name='cpus_duplicate_archive'"
-            ).fetchone()
-            else 0
+            if has_archive else 0
         )
         rows = conn.execute(
             "SELECT name, cores, threads, base_clock, boost_clock, "
