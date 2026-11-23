@@ -89,6 +89,22 @@ class DatabaseLocationTests(unittest.TestCase):
         self.assertTrue(self.old_db.exists())
         self.assertFalse(self.new_db.exists())
 
+    def test_cpu_data_home_overrides_cli_and_saved_locations(self):
+        custom = self.root / "explicit"
+        with patch.dict("os.environ", {"CPU_DATA_HOME": str(self.root / "environment")}):
+            selected = location.resolve_database_path(str(custom), interactive=False)
+        self.assertEqual(selected, (self.root / "environment" / "cpu.db").resolve())
+        self.assertFalse(self.settings_file.exists())
+
+    def test_future_schema_is_rejected_without_creating_destination(self):
+        make_database(self.old_db)
+        with sqlite3.connect(self.old_db) as conn:
+            conn.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
+        with self.assertRaises(RuntimeError):
+            location.migrate_database(self.old_db, self.new_db)
+        self.assertTrue(self.old_db.exists())
+        self.assertFalse(self.new_db.exists())
+
     def test_explicit_directory_is_persisted(self):
         custom = self.root / "custom"
         selected = location.resolve_database_path(str(custom), interactive=False)
