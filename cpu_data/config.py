@@ -1,6 +1,7 @@
 """Centralized, cross-platform application settings."""
 from dataclasses import dataclass
 import os
+import sys
 from pathlib import Path
 from typing import Mapping
 
@@ -32,9 +33,9 @@ def default_data_dir(platform: str | None = None, environ: Mapping[str, str] | N
                      home: Path | None = None) -> Path:
     """Return the platform-standard per-user application data directory."""
     env = os.environ if environ is None else environ
-    system = os.name if platform is None else platform
+    system = sys.platform if platform is None else platform
     user_home = Path.home() if home is None else Path(home)
-    if system == "nt":
+    if system in ("nt", "win32"):
         root = env.get("LOCALAPPDATA")
         return (Path(root) if root else user_home / "AppData" / "Local") / "CPU_Data_offline"
     if system == "darwin":
