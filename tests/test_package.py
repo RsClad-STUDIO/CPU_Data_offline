@@ -13,7 +13,7 @@ class PackageCompatibilityTests(unittest.TestCase):
         self.assertIs(db, database)
         self.assertIs(updater, packaged_updater)
 
-    def test_default_database_path_remains_at_project_root(self):
+    def test_default_database_path_uses_user_data_directory(self):
         self.assertEqual(Path(database.DB_PATH).name, "cpu.db")
         self.assertNotEqual(Path(database.DB_PATH).parent, Path(__file__).resolve().parents[1] / "data")
 
