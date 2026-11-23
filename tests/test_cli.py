@@ -1,6 +1,9 @@
 import sys
 import unittest
 from unittest.mock import patch
+from pathlib import Path
+import tempfile
+import io
 
 from cpu_data import cli, updater
 
@@ -18,6 +21,15 @@ class CLITests(unittest.TestCase):
             with self.assertRaises(SystemExit) as raised:
                 cli.main()
         self.assertEqual(raised.exception.code, 1)
+
+    def test_missing_database_does_not_trigger_automatic_download(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing" / "cpu.db"
+            with patch.object(cli.database_store, "DB_PATH", missing), \
+                 patch.object(updater, "run_update") as run_update, \
+                 patch("sys.stdout", new_callable=io.StringIO):
+                self.assertFalse(cli.ensure_db())
+            run_update.assert_not_called()
 
     def test_help_exits_successfully(self):
         with patch.object(sys, "argv", ["cpu_lookup.py", "--help"]):
