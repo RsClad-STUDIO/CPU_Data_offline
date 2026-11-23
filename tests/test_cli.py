@@ -185,20 +185,24 @@ class CLITests(unittest.TestCase):
         show_detail.assert_called_once_with(rows[0])
 
     def test_interactive_search_rejects_out_of_range_selection(self):
-        rows = [{"id": 101, "name": "Intel Core i7-13700K", "brand": "Intel",
-                 "cores": 16, "threads": 24, "tdp": 125, "passmark_score": 46600}]
+        rows = [
+            {"id": 101, "name": "Intel Core i7-13700K", "brand": "Intel",
+             "cores": 16, "threads": 24, "tdp": 125, "passmark_score": 46600},
+            {"id": 102, "name": "Intel Core i5-14500", "brand": "Intel",
+             "cores": 14, "threads": 20, "tdp": 65, "passmark_score": 30000},
+        ]
         with patch.object(cli, "RICH", False), \
              patch.object(cli.queries, "get_database_stats", return_value={
-                 "cpu_count": 1, "last_updated": None
+                 "cpu_count": 2, "last_updated": None
              }), \
              patch.object(cli.queries, "search_cpus", return_value=rows), \
-             patch("builtins.input", side_effect=["13700K", "2", ":q"]), \
+             patch("builtins.input", side_effect=["13700K", "3", ":q"]), \
              patch.object(cli, "print_cpu_detail") as show_detail, \
              patch.object(cli, "print_error") as show_error:
             cli.search_loop()
 
         show_detail.assert_not_called()
-        show_error.assert_called_once_with("選択番号が範囲外です。1～1 を指定してください。")
+        show_error.assert_called_once_with("選択番号が範囲外です。1～2 を指定してください。")
 
     def test_back_command_restores_previous_results_without_searching_again(self):
         rows = [
