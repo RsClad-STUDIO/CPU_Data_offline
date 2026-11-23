@@ -148,13 +148,13 @@ class CLITests(unittest.TestCase):
             {"id": 102, "name": "Intel Core i5-14500", "brand": "Intel",
              "cores": 14, "threads": 20, "tdp": 65, "passmark_score": 30000},
         ]
-        with patch.object(cli, "RICH", False), \\
+        with patch.object(cli, "RICH", False), \
              patch.object(cli.queries, "get_database_stats", return_value={
                  "cpu_count": 2, "last_updated": None
-             }), \\
-             patch.object(cli.queries, "search_cpus", return_value=rows) as search, \\
-             patch("builtins.input", side_effect=["13700K", "1", ":q"]), \\
-             patch.object(cli, "print_cpu_detail") as show_detail, \\
+             }), \
+             patch.object(cli.queries, "search_cpus", return_value=rows) as search, \
+             patch("builtins.input", side_effect=["13700K", "1", ":q"]), \
+             patch.object(cli, "print_cpu_detail") as show_detail, \
              patch.object(cli, "print_results"):
             cli.search_loop()
 
@@ -164,13 +164,13 @@ class CLITests(unittest.TestCase):
     def test_interactive_search_rejects_out_of_range_selection(self):
         rows = [{"id": 101, "name": "Intel Core i7-13700K", "brand": "Intel",
                  "cores": 16, "threads": 24, "tdp": 125, "passmark_score": 46600}]
-        with patch.object(cli, "RICH", False), \\
+        with patch.object(cli, "RICH", False), \
              patch.object(cli.queries, "get_database_stats", return_value={
                  "cpu_count": 1, "last_updated": None
-             }), \\
-             patch.object(cli.queries, "search_cpus", return_value=rows), \\
-             patch("builtins.input", side_effect=["13700K", "2", ":q"]), \\
-             patch.object(cli, "print_cpu_detail") as show_detail, \\
+             }), \
+             patch.object(cli.queries, "search_cpus", return_value=rows), \
+             patch("builtins.input", side_effect=["13700K", "2", ":q"]), \
+             patch.object(cli, "print_cpu_detail") as show_detail, \
              patch.object(cli, "print_error") as show_error:
             cli.search_loop()
 
@@ -180,12 +180,12 @@ class CLITests(unittest.TestCase):
     def test_interactive_numeric_search_can_be_forced_with_search_prefix(self):
         rows = [{"id": 201, "name": "AMD Ryzen 7 7800X3D", "brand": "AMD",
                  "cores": 8, "threads": 16, "tdp": 120, "passmark_score": 35000}]
-        with patch.object(cli, "RICH", False), \\
+        with patch.object(cli, "RICH", False), \
              patch.object(cli.queries, "get_database_stats", return_value={
                  "cpu_count": 1, "last_updated": None
-             }), \\
-             patch.object(cli.queries, "search_cpus", return_value=rows) as search, \\
-             patch("builtins.input", side_effect=[":s 145", ":q"]), \\
+             }), \
+             patch.object(cli.queries, "search_cpus", return_value=rows) as search, \
+             patch("builtins.input", side_effect=[":s 145", ":q"]), \
              patch.object(cli, "print_cpu_detail"):
             cli.search_loop()
 
