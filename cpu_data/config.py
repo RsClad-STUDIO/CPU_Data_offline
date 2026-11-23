@@ -51,7 +51,7 @@ def default_config_dir(platform: str | None = None, environ: Mapping[str, str] |
     env = os.environ if environ is None else environ
     system = sys.platform if platform is None else platform
     user_home = Path.home() if home is None else Path(home)
-    if system == "nt":
+    if system in ("nt", "win32"):
         root = env.get("APPDATA")
         return (Path(root) if root else user_home / "AppData" / "Roaming") / "CPU_Data_offline"
     if system == "darwin":
