@@ -260,8 +260,11 @@ def _run_show(identifier, output_format):
         return _json_output(
             "show", False,
             data={"candidates": candidates},
-            error={"code": "not_found" if not candidates else "ambiguous", "message": "CPUが一意に特定できません"},
-        ) if candidates else 3
+            error={
+                "code": "not_found" if not candidates else "ambiguous",
+                "message": "CPUが見つかりません" if not candidates else "完全一致するCPUがありません。候補を確認してください",
+            },
+        )
     if candidates:
         print_info("完全一致するCPUはありません。候補を表示します:")
         print_results(candidates)
