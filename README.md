@@ -53,6 +53,9 @@ python cpu_lookup.py --update
 ```bash
 cpu-lookup
 cpu-lookup "i7-13700K"
+cpu-lookup update --mode fast
+cpu-lookup update --mode full
+cpu-lookup --db-location "D:\\CPU_Data"
 cpu-data-update --fast
 cpu-data-update --full
 ```
@@ -63,6 +66,7 @@ cpu-data-update --full
 cpu_data/
 ├─ __init__.py
 ├─ config.py                      # OS別パス・実行時設定
+├─ database_location.py           # DB選択・旧DB移行
 ├─ cli.py                         # CLI表示・入力
 ├─ database.py                    # 旧package import互換ラッパー
 ├─ updater.py                     # 旧package import / 起動互換ラッパー
@@ -85,17 +89,17 @@ updater.py                        # 旧更新 import / 起動パス互換ラッ�
 tests/                            # DB・取得パーサー・互換性テスト
 ```
 
-既存の `python cpu_lookup.py`、`import db`、`import updater` は互換ラッパー経由で維持します。SQLiteファイルの既定位置もプロジェクト直下の `data/cpu.db` のままです。
+既存の `python cpu_lookup.py`、`import db`、`import updater` は互換ラッパー経由で維持します。SQLiteファイルの既定位置はOS標準のユーザーデータ領域にある `cpu.db` です。
 
 - 通常起動：対話検索
 - `--fast`：PassMark一覧のみを更新
 - `--update`：詳細スペックを含めて更新
 
-初回起動時、DBが存在しない場合に自動取得は行いません。明示的に `cpu-lookup --fast` または `python cpu_lookup.py --fast` を実行してください。
+初回起動時、DBが存在しない場合に自動取得は行いません。明示的に `cpu-lookup update --mode fast` または `python cpu_lookup.py --fast` を実行してください。
 
 ## 設定・データ保存先
 
-既定のSQLiteファイルはOS標準のユーザーデータ領域にある `cpu.db` です。環境変数 `CPU_DATA_HOME` を指定すると、そのディレクトリを最優先で使用します。旧保存先のDBが見つかった場合は、初回起動時に移行または旧DBの継続利用を選択できます。PC版では各端末のローカル保存先、NAS版ではNAS側の保存先を個別に設定する想定です。PC版とNAS版で同じDBファイルを直接共有する設計ではありません。
+既定のSQLiteファイルはOS標準のユーザーデータ領域にある `cpu.db` です。環境変数 `CPU_DATA_HOME` を指定すると、そのディレクトリを最優先で使用します。`--db-location <ディレクトリ>` で選択した保存先はユーザー設定に記録され、次回起動時も利用されます。旧保存先のDBが見つかった場合は、初回起動時に移行または旧DBの継続利用を選択できます。PC版では各端末のローカル保存先、NAS版ではNAS側の保存先を個別に設定する想定です。PC版とNAS版で同じDBファイルを直接共有する設計ではありません。
 
 Windows PowerShell:
 
