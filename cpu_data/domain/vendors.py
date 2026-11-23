@@ -4,7 +4,7 @@ import re
 
 def classify_vendor(name: str) -> str:
     """Classify by explicit vendor prefixes before product-family tokens."""
-    n = re.sub(r"\\s+", " ", name.strip().lower())
+    n = re.sub(r"\s+", " ", name.strip().lower())
     if not n:
         return "Unknown"
 
@@ -27,10 +27,10 @@ def classify_vendor(name: str) -> str:
             return vendor
 
     # PassMark also contains some names that omit the vendor prefix.
-    if re.search(r"\\b(?:ryzen|athlon|threadripper|epyc|phenom|sempron|opteron)\\b", n):
+    if re.search(r"\b(?:ryzen|athlon|threadripper|epyc|phenom|sempron|opteron)\b", n):
         return "AMD"
-    if re.search(r"\\bcore\\s+(?:i[3579]|ultra\\s+[3579])\\b", n):
+    if re.search(r"\bcore\s+(?:i[3579]|ultra\s+[3579])\b", n):
         return "Intel"
-    if re.search(r"\\b(?:pentium|celeron|xeon|atom|itanium)\\b", n):
+    if re.search(r"\b(?:pentium|celeron|xeon|atom|itanium)\b", n):
         return "Intel"
     return "Unknown"
