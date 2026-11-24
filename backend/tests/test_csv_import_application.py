@@ -124,6 +124,27 @@ class CSVImportApplicationTests(unittest.TestCase):
                 ("AMD", "8", "16", 30000),
             )
 
+    def test_escaped_clear_marker_is_applied_as_literal_text(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpus.db"
+            self._initialize_database(db_path, [{
+                "name": "CPU A",
+                "brand": "Original",
+            }])
+            preview = self._preview(
+                db_path,
+                b"CPU Name,Brand\\nCPU A,\\\\__CLEAR__\\n",
+            )
+
+            result = apply_csv_import(preview, database_path=db_path)
+
+            self.assertEqual((result.inserted, result.updated, result.unchanged), (0, 1, 0))
+            with closing(sqlite3.connect(db_path)) as connection, connection:
+                brand = connection.execute(
+                    "SELECT brand FROM cpus WHERE name = 'CPU A'"
+                ).fetchone()[0]
+            self.assertEqual(brand, "__CLEAR__")
+
     def test_batch_failure_rolls_back_prior_updates(self):
         with tempfile.TemporaryDirectory() as directory:
             db_path = Path(directory) / "cpus.db"
