@@ -45,6 +45,26 @@ class ApplicationQueryTests(unittest.TestCase):
         self.assertEqual(by_name["name"], "Intel Core i7-13700K")
         self.assertIsNone(queries.get_cpu_by_name("Intel Core i5-13600K"))
 
+    def test_exact_name_lookup_supports_legacy_database_without_name_key(self):
+        self.db_path.parent.mkdir(parents=True)
+        connection = __import__("sqlite3").connect(self.db_path)
+        try:
+            connection.execute(
+                "CREATE TABLE cpus (id INTEGER PRIMARY KEY, name TEXT NOT NULL)"
+            )
+            connection.execute(
+                "INSERT INTO cpus(name) VALUES (?)",
+                ("Intel Core i7-13700K",),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        result = queries.get_cpu_by_name("intel core i7-13700k")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["name"], "Intel Core i7-13700K")
+
     def test_exact_name_lookup_is_not_limited_by_partial_search_results(self):
         database.init_db()
         database.upsert_many([
