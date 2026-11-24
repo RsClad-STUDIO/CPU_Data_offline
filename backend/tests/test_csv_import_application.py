@@ -133,7 +133,7 @@ class CSVImportApplicationTests(unittest.TestCase):
             }])
             preview = self._preview(
                 db_path,
-                b"CPU Name,Brand\\nCPU A,\\\\__CLEAR__\\n",
+                b"CPU Name,Brand\nCPU A,\\__CLEAR__\n",
             )
 
             result = apply_csv_import(preview, database_path=db_path)
