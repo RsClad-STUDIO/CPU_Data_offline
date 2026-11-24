@@ -11,7 +11,8 @@ from cpu_data.infrastructure import database
 
 class CSVImportApplicationTests(unittest.TestCase):
     def _create_database(self, path, names):
-        with sqlite3.connect(path) as connection:
+        connection = sqlite3.connect(path)
+        try:
             connection.execute(
                 "CREATE TABLE cpus (id INTEGER PRIMARY KEY, name TEXT NOT NULL)"
             )
@@ -19,6 +20,9 @@ class CSVImportApplicationTests(unittest.TestCase):
                 "INSERT INTO cpus(name) VALUES (?)",
                 [(name,) for name in names],
             )
+            connection.commit()
+        finally:
+            connection.close()
 
     def test_preview_uses_existing_database_read_only_and_records_provenance(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -42,7 +46,7 @@ class CSVImportApplicationTests(unittest.TestCase):
                 [row.status for row in preview.rows],
                 ["update", "new"],
             )
-            self.assertEqual(preview.source, "vendor-catalog")
+            self.assertEqual(preview.source_name, "vendor-catalog")
             self.assertEqual(preview.retrieved_at, "2026-11-24")
             self.assertEqual(preview.profile, "vendor-csv-v1")
             self.assertEqual(
