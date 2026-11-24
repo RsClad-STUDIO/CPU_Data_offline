@@ -79,6 +79,8 @@ def _open_existing_import_database(database_path: str | Path) -> sqlite3.Connect
         raise ValueError("CSV import writes are restricted to temporary SQLite databases")
     if not path.is_file():
         raise FileNotFoundError(path)
+    if configured_path.is_file() and os.path.samefile(path, configured_path):
+        raise ValueError("CSV import writes are disabled for the configured application database")
     connection = sqlite3.connect(
         path.as_uri() + "?mode=rw",
         uri=True,
