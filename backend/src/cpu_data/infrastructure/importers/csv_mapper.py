@@ -30,6 +30,7 @@ class CSVPreviewRow:
     unknown_fields: Mapping[str, str | None]
     errors: tuple[str, ...] = ()
     clear_fields: tuple[str, ...] = ()
+    expected_existing_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
