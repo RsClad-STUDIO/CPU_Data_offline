@@ -339,8 +339,22 @@ def _csv_preview_payload(preview):
     }
 
 
+def _parse_csv_column_mappings(values):
+    mappings = {}
+    for value in values or ():
+        if "=" not in value:
+            raise ValueError(f"列マッピングは CSV列名=CPUフィールド の形式で指定してください: {value}")
+        column, field = value.split("=", 1)
+        column, field = column.strip(), field.strip()
+        if not column or not field or column in mappings:
+            raise ValueError(f"列マッピングが空または重複しています: {value}")
+        mappings[column] = field
+    return mappings or None
+
+
 def _run_csv_preview(source, output_format, *, encoding=None, delimiter=",",
-                     source_name=None, retrieved_at=None, profile=None):
+                     source_name=None, retrieved_at=None, profile=None,
+                     column_mappings=None):
     missing = _database_required("csv preview", output_format)
     if missing is not None:
         return missing
@@ -352,6 +366,7 @@ def _run_csv_preview(source, output_format, *, encoding=None, delimiter=",",
             source_name=source_name,
             retrieved_at=retrieved_at,
             profile=profile,
+            column_mapping=_parse_csv_column_mappings(column_mappings),
         )
     except (OSError, UnicodeError, ValueError, sqlite3.DatabaseError) as error:
         message = f"CSVプレビューに失敗しました: {error}"
@@ -519,6 +534,10 @@ def main(argv=None):
     parser.add_argument("--source-name", help="CSVデータの出所名（記録用）")
     parser.add_argument("--retrieved-at", help="データ取得日時（ISO 8601等。自動補完しません）")
     parser.add_argument("--profile", help="変換プロファイル名")
+    parser.add_argument(
+        "--map", dest="csv_mappings", action="append", metavar="COLUMN=FIELD",
+        help="CSV列をCPUフィールドへ明示マッピング（複数指定可）",
+    )
     update_group = parser.add_mutually_exclusive_group()
     update_group.add_argument("--update", action="store_true", help="データを完全更新")
     update_group.add_argument("--fast", action="store_true", help="高速更新（PassMarkのみ）")
@@ -545,7 +564,7 @@ def main(argv=None):
         parser.error("--delimiter は , / \\t / ; のいずれかを指定してください")
     if args.query != "csv" and any((
         args.encoding, args.source_name, args.retrieved_at, args.profile,
-        args.delimiter != ",",
+        args.csv_mappings, args.delimiter != ",",
     )):
         parser.error("CSV専用オプションは csv preview と併用してください")
     if args.query == "db" and args.target not in ("verify", "backup"):
@@ -588,6 +607,7 @@ def main(argv=None):
             args.extra, args.format, encoding=args.encoding,
             delimiter=args.delimiter, source_name=args.source_name,
             retrieved_at=args.retrieved_at, profile=args.profile,
+            column_mappings=args.csv_mappings,
         )
     if args.query == "update" or args.update or args.fast:
         try:
