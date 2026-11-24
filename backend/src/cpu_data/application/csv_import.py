@@ -1,4 +1,4 @@
-"""Application use case for safe, read-only CSV import previews."""
+"""CSV import preview and isolated transactional application use cases."""
 from __future__ import annotations
 
 from contextlib import closing
