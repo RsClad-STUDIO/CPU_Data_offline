@@ -63,7 +63,11 @@ cpu-lookup db verify
 cpu-lookup db backup "./backup/cpu.db"
 cpu-lookup update --mode fast
 cpu-lookup update --mode full
+cpu-lookup csv preview "./vendor-cpus.csv" --format json
+cpu-lookup csv preview "./vendor-cpus.csv" --map "Processor=name" --map "Maker=brand"
 ```
+
+CSV取り込みは現在、読み取り専用のプレビューまでCLIから利用できます。既存DBとのCPU名照合、行ごとの新規/更新/曖昧/エラー判定、未知列、SHA-256、指定された出所情報を確認できます。文字コード・区切り文字は必要に応じて `--encoding` / `--delimiter` で指定します。適用処理はCLIに公開していません。Application層の適用APIも一時ディレクトリ内のテスト用SQLiteに限定され、設定済みアプリDBには書き込めません。
 
 更新専用エントリポイント：
 
