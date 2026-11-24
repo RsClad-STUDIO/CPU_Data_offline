@@ -5,7 +5,6 @@ import csv
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
-from typing import Iterable
 
 
 _NULL_VALUES = {"", "na", "n/a", "null", "none"}
