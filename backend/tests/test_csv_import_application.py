@@ -268,7 +268,7 @@ class CSVImportApplicationTests(unittest.TestCase):
                 self.skipTest(f"Hard links are unavailable in this environment: {error}")
 
             from cpu_data.infrastructure.importers.csv_mapper import preview_csv
-            preview = preview_csv(b"CPU Name,Brand\\nCPU A,Changed\\n")
+            preview = preview_csv(b"CPU Name,Brand\nCPU A,Changed\n")
             before = hashlib.sha256(application_db.read_bytes()).hexdigest()
 
             with patch.object(database, "DB_PATH", str(application_db)):
