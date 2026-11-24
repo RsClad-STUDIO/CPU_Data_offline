@@ -112,7 +112,7 @@ class CLITests(unittest.TestCase):
             with patch.object(
                 sys, "argv",
                 ["cpu_lookup.py", "csv", "preview", "sample.csv", "--format", "json",
-                 "--source-name", "vendor export"],
+                 "--source-name", "vendor export", "--map", "CPU= name"],
             ), patch.object(cli, "configure_database"), \
                  patch.object(cli.database_store, "DB_PATH", db_path), \
                  patch.object(cli, "preview_csv_import", return_value=preview) as preview_csv, \
@@ -127,6 +127,7 @@ class CLITests(unittest.TestCase):
         preview_csv.assert_called_once_with(
             "sample.csv", encoding=None, delimiter=",",
             source_name="vendor export", retrieved_at=None, profile=None,
+            column_mapping={"CPU": "name"},
         )
 
     def test_csv_preview_does_not_create_missing_database(self):
