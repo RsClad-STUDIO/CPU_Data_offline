@@ -45,6 +45,25 @@ class ApplicationQueryTests(unittest.TestCase):
         self.assertEqual(by_name["name"], "Intel Core i7-13700K")
         self.assertIsNone(queries.get_cpu_by_name("Intel Core i5-13600K"))
 
+    def test_exact_name_lookup_is_not_limited_by_partial_search_results(self):
+        database.init_db()
+        database.upsert_many([
+            {
+                "name": f"Intel Core i7-{index:04d}",
+                "passmark_score": 1000 + index,
+            }
+            for index in range(100)
+        ])
+        database.upsert_cpu({
+            "name": "Intel Core i7",
+            "passmark_score": 1,
+        })
+
+        result = queries.get_cpu_by_name("Intel Core i7")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["name"], "Intel Core i7")
+
     def test_stats_returns_metadata_without_formatting(self):
         self.create_database()
         stats = queries.get_database_stats()
