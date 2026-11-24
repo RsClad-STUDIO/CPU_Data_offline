@@ -35,6 +35,14 @@ def preview_csv_import(
     values are caller-supplied; retrieved_at is not inferred from local time.
     """
     with closing(database.get_readonly_connection()) as connection:
+        table_exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cpus'"
+        ).fetchone()
+        if table_exists is None:
+            # Preserve the historical sqlite3.OperationalError contract for
+            # databases that exist but have not been initialized.
+            connection.execute("SELECT name FROM cpus LIMIT 0")
+
         available_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(cpus)")
         }
