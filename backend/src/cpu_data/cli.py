@@ -560,7 +560,7 @@ def main(argv=None):
         parser.error("statsに余分な引数は指定できません")
     if args.query != "update" and args.mode:
         parser.error("--mode は update コマンドと併用してください")
-    if args.query in commands and args.query not in ("db", "update") and args.extra:
+    if args.query in commands and args.query not in ("db", "update", "csv") and args.extra:
         parser.error("余分な引数が指定されています")
 
     try:
