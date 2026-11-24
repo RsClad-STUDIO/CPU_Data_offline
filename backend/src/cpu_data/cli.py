@@ -10,6 +10,7 @@ import threading
 from pathlib import Path
 
 from .application import queries
+from .application.csv_import import preview_csv_import
 from .database_location import configure_database, DatabaseSelectionRequired
 from .infrastructure import database as database_store
 from .application import update as update_service
@@ -313,6 +314,76 @@ def _run_show(identifier, output_format):
     return 3
 
 
+def _csv_preview_payload(preview):
+    return {
+        "headers": list(preview.headers),
+        "encoding": preview.encoding,
+        "delimiter": preview.delimiter,
+        "sha256": preview.sha256,
+        "source_name": preview.source_name,
+        "retrieved_at": preview.retrieved_at,
+        "profile": preview.profile,
+        "unknown_columns": list(preview.unknown_columns),
+        "counts": preview.counts,
+        "rows": [
+            {
+                "row_number": row.row_number,
+                "status": row.status,
+                "record": row.record.to_mapping() if row.record is not None else None,
+                "unknown_fields": dict(row.unknown_fields),
+                "errors": list(row.errors),
+                "clear_fields": list(row.clear_fields),
+            }
+            for row in preview.rows
+        ],
+    }
+
+
+def _run_csv_preview(source, output_format, *, encoding=None, delimiter=",",
+                     source_name=None, retrieved_at=None, profile=None):
+    missing = _database_required("csv preview", output_format)
+    if missing is not None:
+        return missing
+    try:
+        preview = preview_csv_import(
+            source,
+            encoding=encoding,
+            delimiter=delimiter,
+            source_name=source_name,
+            retrieved_at=retrieved_at,
+            profile=profile,
+        )
+    except (OSError, UnicodeError, ValueError, sqlite3.DatabaseError) as error:
+        message = f"CSVプレビューに失敗しました: {error}"
+        if output_format == "json":
+            return _json_output("csv preview", False, error={
+                "code": type(error).__name__, "message": message
+            })
+        print_error(message)
+        return 1
+
+    data = _csv_preview_payload(preview)
+    if output_format == "json":
+        return _json_output("csv preview", True, data=data)
+
+    counts = preview.counts
+    print_info(
+        f"CSVプレビュー: 新規={counts['new']} 更新={counts['update']} "
+        f"曖昧={counts['ambiguous']} エラー={counts['error']}"
+    )
+    print_info(
+        f"文字コード={preview.encoding} 区切り={preview.delimiter!r} "
+        f"SHA-256={preview.sha256}"
+    )
+    for row in preview.rows:
+        name = row.record.name if row.record is not None else "(名称不明)"
+        suffix = f" — {'; '.join(row.errors)}" if row.errors else ""
+        print(f"行{row.row_number}: {row.status}: {name}{suffix}")
+    if preview.unknown_columns:
+        print_info("未対応列: " + ", ".join(preview.unknown_columns))
+    return 0 if counts["ambiguous"] == 0 and counts["error"] == 0 else 3
+
+
 def _run_stats(output_format):
     try:
         data = queries.get_database_stats()
@@ -443,12 +514,17 @@ def main(argv=None):
     parser.add_argument("--mode", choices=("fast", "full"), help="updateコマンドの更新モード")
     parser.add_argument("--limit", type=int, default=20, help="searchの最大表示件数")
     parser.add_argument("--format", choices=("text", "json"), default="text", help="出力形式")
+    parser.add_argument("--encoding", help="CSV文字コードを明示指定")
+    parser.add_argument("--delimiter", default=",", help="CSV区切り文字（既定: ,）")
+    parser.add_argument("--source-name", help="CSVデータの出所名（記録用）")
+    parser.add_argument("--retrieved-at", help="データ取得日時（ISO 8601等。自動補完しません）")
+    parser.add_argument("--profile", help="変換プロファイル名")
     update_group = parser.add_mutually_exclusive_group()
     update_group.add_argument("--update", action="store_true", help="データを完全更新")
     update_group.add_argument("--fast", action="store_true", help="高速更新（PassMarkのみ）")
     args = parser.parse_args(argv)
 
-    commands = {"search", "show", "stats", "update", "db"}
+    commands = {"search", "show", "stats", "update", "db", "csv"}
     if args.mode and args.query != "update":
         parser.error("--mode は update コマンドと併用してください")
     if args.mode and (args.fast or args.update):
@@ -461,6 +537,17 @@ def main(argv=None):
         parser.error("--fast / --update は引数なしの起動、または update コマンド専用です")
     if args.limit < 1:
         parser.error("--limit は1以上を指定してください")
+    if args.query == "csv" and args.target != "preview":
+        parser.error("csvには preview を指定してください")
+    if args.query == "csv" and not args.extra:
+        parser.error("csv previewにはCSVファイルのパスが必要です")
+    if args.query == "csv" and args.delimiter not in (",", "\\t", ";"):
+        parser.error("--delimiter は , / \\t / ; のいずれかを指定してください")
+    if args.query != "csv" and any((
+        args.encoding, args.source_name, args.retrieved_at, args.profile,
+        args.delimiter != ",",
+    )):
+        parser.error("CSV専用オプションは csv preview と併用してください")
     if args.query == "db" and args.target not in ("verify", "backup"):
         parser.error("dbには verify または backup を指定してください")
     if args.query == "db" and args.target == "verify" and args.extra:
@@ -496,6 +583,12 @@ def main(argv=None):
         return _run_stats(args.format)
     if args.query == "db":
         return _run_db_command(args.target, args.extra, args.format)
+    if args.query == "csv":
+        return _run_csv_preview(
+            args.extra, args.format, encoding=args.encoding,
+            delimiter=args.delimiter, source_name=args.source_name,
+            retrieved_at=args.retrieved_at, profile=args.profile,
+        )
     if args.query == "update" or args.update or args.fast:
         try:
             result, code = _run_update_in_adapter(
