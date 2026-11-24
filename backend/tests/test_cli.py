@@ -92,6 +92,57 @@ class CLITests(unittest.TestCase):
         self.assertEqual(payload["data"]["items"][0]["name"], row["name"])
         search.assert_called_once_with("13700K", limit=20)
 
+    def test_csv_preview_json_uses_read_only_application_service(self):
+        output = io.StringIO()
+        preview = SimpleNamespace(
+            headers=("CPU Name", "Brand"),
+            encoding="utf-8",
+            delimiter=",",
+            sha256="a" * 64,
+            source_name="vendor export",
+            retrieved_at="2026-11-24T10:00:00+09:00",
+            profile="vendor-v1",
+            unknown_columns=(),
+            counts={"new": 1, "update": 0, "ambiguous": 0, "error": 0},
+            rows=(),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpu.db"
+            db_path.touch()
+            with patch.object(
+                sys, "argv",
+                ["cpu_lookup.py", "csv", "preview", "sample.csv", "--format", "json",
+                 "--source-name", "vendor export"],
+            ), patch.object(cli, "configure_database"), \
+                 patch.object(cli.database_store, "DB_PATH", db_path), \
+                 patch.object(cli, "preview_csv_import", return_value=preview) as preview_csv, \
+                 patch("sys.stdout", output):
+                code = cli.main()
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["command"], "csv preview")
+        self.assertEqual(payload["data"]["counts"]["new"], 1)
+        preview_csv.assert_called_once_with(
+            "sample.csv", encoding=None, delimiter=",",
+            source_name="vendor export", retrieved_at=None, profile=None,
+        )
+
+    def test_csv_preview_does_not_create_missing_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing" / "cpu.db"
+            with patch.object(
+                sys, "argv",
+                ["cpu_lookup.py", "csv", "preview", "sample.csv"],
+            ), patch.object(cli, "configure_database"), \
+                 patch.object(cli.database_store, "DB_PATH", missing), \
+                 patch.object(cli, "preview_csv_import") as preview_csv, \
+                 patch("sys.stdout", new_callable=io.StringIO):
+                self.assertEqual(cli.main(), 1)
+        preview_csv.assert_not_called()
+        self.assertFalse(missing.exists())
+
     def test_show_json_returns_not_found_envelope(self):
         output = io.StringIO()
         with tempfile.TemporaryDirectory() as directory:
