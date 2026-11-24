@@ -2,9 +2,14 @@
 from __future__ import annotations
 
 from contextlib import closing
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
+import sqlite3
 from typing import Mapping
 
+from ..domain.cpu import CPURecord
+from ..domain.identity import normalize_cpu_name
 from ..infrastructure import database
 from ..infrastructure.importers.csv_mapper import CSVPreview, preview_csv
 
@@ -45,14 +50,6 @@ def preview_csv_import(
 
 # The write path requires an explicit database path. It never falls back to
 # SETTINGS/DB_PATH and never initializes or migrates the target database.
-from dataclasses import dataclass
-from datetime import datetime, timezone
-import sqlite3
-
-from ..domain.cpu import CPURecord
-from ..domain.identity import normalize_cpu_name
-
-
 @dataclass(frozen=True, slots=True)
 class CSVImportResult:
     inserted: int
