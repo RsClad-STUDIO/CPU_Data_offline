@@ -115,6 +115,22 @@ class CSVMapperTests(unittest.TestCase):
             {"new": 0, "update": 1, "ambiguous": 0, "error": 1},
         )
 
+
+    def test_carries_source_provenance_without_changing_csv_data(self):
+        raw = b"CPU Name\\nIntel Core i7-13700K\\n"
+        preview = preview_csv(
+            raw,
+            source="vendor-catalog",
+            retrieved_at="2026-11-24",
+            profile="catalog-v1",
+        )
+        import hashlib
+
+        self.assertEqual(preview.sha256, hashlib.sha256(raw).hexdigest())
+        self.assertEqual(preview.source, "vendor-catalog")
+        self.assertEqual(preview.retrieved_at, "2026-11-24")
+        self.assertEqual(preview.profile, "catalog-v1")
+
     def test_preview_does_not_import_or_write_to_database(self):
         import inspect
         from cpu_data.infrastructure.importers import csv_mapper

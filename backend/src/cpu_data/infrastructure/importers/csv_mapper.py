@@ -33,6 +33,10 @@ class CSVPreview:
     unknown_columns: tuple[str, ...]
     encoding: str
     delimiter: str
+    sha256: str
+    source: str | None = None
+    retrieved_at: str | None = None
+    profile: str | None = None
 
     @property
     def counts(self) -> dict[str, int]:
@@ -141,6 +145,9 @@ def preview_csv(
     encoding: str | None = None,
     delimiter: str = ",",
     column_mapping: Mapping[str, str] | None = None,
+    source: str | None = None,
+    retrieved_at: str | None = None,
+    profile: str | None = None,
 ) -> CSVPreview:
     """Create a deterministic import preview; never opens or writes a database.
 
@@ -205,4 +212,8 @@ def preview_csv(
         unknown_columns=unknown_columns,
         encoding=document.encoding,
         delimiter=document.delimiter,
+        sha256=document.sha256,
+        source=source,
+        retrieved_at=retrieved_at,
+        profile=profile,
     )

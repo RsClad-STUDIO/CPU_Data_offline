@@ -79,6 +79,14 @@ class CSVReaderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             read_csv(b"Name|Brand\nCPU|Intel\n", delimiter="|")
 
+
+    def test_records_sha256_of_exact_source_bytes(self):
+        import hashlib
+
+        raw = b"CPU Name\\nIntel Core i7-13700K\\n"
+        document = read_csv(raw)
+        self.assertEqual(document.sha256, hashlib.sha256(raw).hexdigest())
+
     def test_does_not_import_database_or_write_records(self):
         # The reader is intentionally a pure parsing boundary.
         import inspect

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
@@ -31,6 +32,7 @@ class CSVDocument:
     rows: tuple[CSVRow, ...]
     encoding: str
     delimiter: str
+    sha256: str
 
 
 def _read_bytes(source: str | Path | bytes | bytearray) -> bytes:
@@ -133,4 +135,5 @@ def read_csv(
         rows=tuple(rows),
         encoding=detected_encoding,
         delimiter=delimiter,
+        sha256=hashlib.sha256(data).hexdigest(),
     )
