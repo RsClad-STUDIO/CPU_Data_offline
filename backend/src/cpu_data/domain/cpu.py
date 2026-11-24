@@ -29,6 +29,11 @@ class CPURecord:
                 raise ValueError("PassMark score must be an integer or None")
             if self.passmark_score < 0:
                 raise ValueError("PassMark score must not be negative")
+            if self.passmark_score > 9_223_372_036_854_775_807:
+                raise ValueError(
+                    "PassMark score exceeds the SQLite INTEGER maximum "
+                    "(9223372036854775807)"
+                )
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, Any]) -> "CPURecord":
