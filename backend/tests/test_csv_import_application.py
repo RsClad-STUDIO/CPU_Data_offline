@@ -123,7 +123,7 @@ class CSVImportApplicationTests(unittest.TestCase):
                 ("AMD", "8", "16", 30000),
             )
 
-    def test_batch_failure_rolls_back_prior_inserts(self):
+    def test_batch_failure_rolls_back_prior_updates(self):
         with tempfile.TemporaryDirectory() as directory:
             db_path = Path(directory) / "cpus.db"
             self._initialize_database(db_path, [{
