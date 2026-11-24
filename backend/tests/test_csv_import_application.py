@@ -233,6 +233,23 @@ class CSVImportApplicationTests(unittest.TestCase):
                 apply_csv_import(preview, database_path=missing)
             self.assertFalse(missing.exists())
 
+    def test_configured_application_database_is_never_a_write_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpus.db"
+            self._initialize_database(db_path)
+            from cpu_data.infrastructure.importers.csv_mapper import preview_csv
+            preview = preview_csv(b"CPU Name,Brand\\nCPU A,Vendor A\\n")
+            before = hashlib.sha256(db_path.read_bytes()).hexdigest()
+
+            with patch.object(database, "DB_PATH", str(db_path)):
+                with self.assertRaisesRegex(ValueError, "configured application database"):
+                    apply_csv_import(preview, database_path=db_path)
+
+            self.assertEqual(
+                hashlib.sha256(db_path.read_bytes()).hexdigest(),
+                before,
+            )
+
     def test_database_connection_is_read_only(self):
         with tempfile.TemporaryDirectory() as directory:
             db_path = Path(directory) / "cpus.db"
