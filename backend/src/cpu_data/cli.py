@@ -1,0 +1,645 @@
+#!/usr/bin/env python3
+"""CPU information search CLI and command-line adapter."""
+from __future__ import annotations
+
+import argparse
+import json
+import sqlite3
+import sys
+import threading
+from pathlib import Path
+
+from .application import queries
+from .application.csv_import import preview_csv_import
+from .database_location import configure_database, DatabaseSelectionRequired
+from .infrastructure import database as database_store
+from .application import update as update_service
+
+try:
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich import box
+    RICH = True
+    console = Console()
+except ImportError:
+    RICH = False
+
+
+FIELD_LABELS = [
+    ("brand", "メーカー"),
+    ("family", "ファミリー"),
+    ("cores", "コア数"),
+    ("threads", "スレッド数"),
+    ("base_clock", "ベースクロック"),
+    ("boost_clock", "ブーストクロック"),
+    ("tdp", "TDP"),
+    ("socket", "ソケット"),
+    ("process", "製造プロセス"),
+    ("memory_support", "メモリ対応"),
+    ("igpu", "内蔵GPU"),
+    ("passmark_score", "Passmarkスコア"),
+]
+
+
+def _fmt_score(score):
+    return "N/A" if score is None else f"{score:,}"
+
+
+def print_cpu_detail_rich(row):
+    lines = []
+    for field, label in FIELD_LABELS:
+        value = row[field]
+        if value is None or value == "":
+            value = "―"
+        if field == "passmark_score":
+            value = _fmt_score(row[field])
+        lines.append(f"  [bold]{label:<14}[/bold]: {value}")
+    console.print(Panel("\n".join(lines), title=f"[cyan bold]{row['name']}[/]", expand=False))
+
+
+def print_cpu_detail_plain(row):
+    name = row["name"]
+    print(f"\n── {name} " + "─" * max(0, 50 - len(name)))
+    for field, label in FIELD_LABELS:
+        value = row[field]
+        if value is None or value == "":
+            value = "―"
+        if field == "passmark_score":
+            value = _fmt_score(row[field])
+        print(f"  {label:<14}: {value}")
+    print()
+
+
+def print_cpu_detail(row):
+    print_cpu_detail_rich(row) if RICH else print_cpu_detail_plain(row)
+
+
+def print_results_rich(rows):
+    table = Table(box=box.SIMPLE_HEAD, show_header=True, header_style="bold cyan")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("CPU名", min_width=30)
+    table.add_column("メーカー", width=8)
+    table.add_column("コア", width=6)
+    table.add_column("スレッド", width=8)
+    table.add_column("TDP", width=8)
+    table.add_column("Passmark", justify="right", width=10)
+    for index, row in enumerate(rows, 1):
+        table.add_row(
+            str(index), row["name"], row["brand"] or "―",
+            row["cores"] or "―", row["threads"] or "―",
+            row["tdp"] or "―", _fmt_score(row["passmark_score"]),
+        )
+    console.print(table)
+
+
+def print_results_plain(rows):
+    print(f"\n{'#':<4} {'CPU名':<40} {'メーカー':<8} {'コア':<6} {'Passmark':>10}")
+    print("─" * 72)
+    for index, row in enumerate(rows, 1):
+        print(
+            f"{index:<4} {row['name']:<40} {(row['brand'] or '―'):<8} "
+            f"{(row['cores'] or '―'):<6} {_fmt_score(row['passmark_score']):>10}"
+        )
+    print()
+
+
+def print_results(rows):
+    print_results_rich(rows) if RICH else print_results_plain(rows)
+
+
+def print_info(message):
+    console.print(f"[dim]{message}[/]") if RICH else print(message)
+
+
+def print_error(message):
+    console.print(f"[red]{message}[/]") if RICH else print(f"エラー: {message}", file=sys.stderr)
+
+
+def print_header():
+    if RICH:
+        console.print(Panel(
+            "[bold cyan]CPU Lookup[/] — オフラインCPU情報検索ツール\n"
+            "[dim]型番の一部を入力して検索。:q または Ctrl+C で終了。:u で更新[/]",
+            expand=False,
+        ))
+    else:
+        print("=" * 50)
+        print("  CPU Lookup — オフラインCPU情報検索ツール")
+        print("  型番の一部を入力して検索。:q で終了。:u で更新")
+        print("=" * 50)
+
+
+def ensure_db():
+    """Check for an existing database without triggering a first download."""
+    if database_store.DB_PATH.is_file():
+        return True
+    print("データベースが見つかりません。")
+    print("初回データ取得を行うには、次を明示的に実行してください:")
+    print("  cpu-lookup update --mode fast")
+    print("または: cpu-lookup --fast")
+    return False
+
+
+def _event_to_stderr(event):
+    if isinstance(event, update_service.UpdateStarted):
+        print(f"更新開始: mode={event.mode}, total={event.total}, resume={event.start_index}", file=sys.stderr)
+    elif isinstance(event, update_service.UpdateProgress):
+        # Full updates may resume partway through the source list. Use the
+        # absolute source position for progress, while fast updates use the
+        # per-run processed count.
+        progress = (
+            event.position
+            if event.mode == "full" and event.position is not None
+            else event.processed
+        )
+        interval = max(1, event.total // 20)
+        if progress == event.total or progress % interval == 0:
+            print(
+                f"進捗: {progress}/{event.total} "
+                f"成功={event.succeeded} 詳細なし={event.not_found}",
+                file=sys.stderr,
+            )
+    elif isinstance(event, update_service.UpdateCancelled):
+        print(f"更新中断: {event.processed}/{event.total}", file=sys.stderr)
+
+
+
+def _run_update_in_adapter(fast=False):
+    """Run the use case in a worker so Ctrl+C can request graceful cancellation."""
+    token = update_service.CancellationToken()
+    outcome = {}
+    events = []
+
+    def worker():
+        try:
+            outcome["result"] = update_service.run_update(
+                fast=fast,
+                event_handler=events.append,
+                cancellation_token=token,
+            )
+        except BaseException as error:
+            outcome["error"] = error
+
+    thread = threading.Thread(target=worker, name="cpu-data-update", daemon=True)
+    thread.start()
+    try:
+        while thread.is_alive():
+            thread.join(0.2)
+            while events:
+                _event_to_stderr(events.pop(0))
+    except KeyboardInterrupt:
+        token.cancel()
+        print("中断要求を送信しました。保存処理の完了を待っています...", file=sys.stderr)
+        while thread.is_alive():
+            thread.join(0.2)
+            while events:
+                _event_to_stderr(events.pop(0))
+    while events:
+        _event_to_stderr(events.pop(0))
+
+    if "error" in outcome:
+        error = outcome["error"]
+        if isinstance(error, KeyboardInterrupt):
+            return None, 130
+        raise error
+    result = outcome.get("result")
+    if result is None:
+        raise RuntimeError("更新処理から結果が返されませんでした")
+    if result.status == "cancelled":
+        return result, 130
+    return result, 0
+
+
+def _json_output(command, ok, data=None, error=None, warnings=None, exit_code=None):
+    payload = {
+        "schema_version": 1,
+        "command": command,
+        "ok": bool(ok),
+        "data": data,
+        "warnings": warnings or [],
+    }
+    if error is not None:
+        payload["error"] = error
+    print(json.dumps(payload, ensure_ascii=False, default=str))
+    if exit_code is not None:
+        return exit_code
+    return 0 if ok else 1
+
+
+def _cpu_payload(row):
+    return dict(row) if row is not None else None
+
+
+def _database_required(command, output_format):
+    if Path(database_store.DB_PATH).is_file():
+        return None
+    message = "データベースがありません。cpu-lookup update --mode fast を実行してください"
+    if output_format == "json":
+        return _json_output(command, False, error={
+            "code": "database_not_found", "message": message
+        })
+    print_error(message)
+    return 1
+
+
+def _run_search(query, limit, output_format):
+    missing = _database_required("search", output_format)
+    if missing is not None:
+        return missing
+    try:
+        rows = queries.search_cpus(query, limit=limit)
+    except (TypeError, ValueError) as error:
+        return _json_output("search", False, error={"code": "invalid_query", "message": str(error)}, exit_code=2) if output_format == "json" else (print_error(str(error)) or 2)
+    except sqlite3.DatabaseError as error:
+        message = f"データベースを読み取れません: {error}"
+        return _json_output("search", False, error={"code": "database_error", "message": message}) if output_format == "json" else (print_error(message) or 1)
+    data = [_cpu_payload(row) for row in rows]
+    if output_format == "json":
+        return _json_output("search", True, data={"items": data, "count": len(data)})
+    if not rows:
+        print_info(f"「{query}」に一致するCPUが見つかりませんでした。")
+    elif len(rows) == 1:
+        print_cpu_detail(rows[0])
+    else:
+        print_results(rows)
+    return 0
+
+
+def _run_show(identifier, output_format):
+    missing = _database_required("show", output_format)
+    if missing is not None:
+        return missing
+    row = None
+    try:
+        if identifier.isdecimal():
+            try:
+                row = queries.get_cpu_by_id(int(identifier))
+            except ValueError:
+                row = None
+        else:
+            row = queries.get_cpu_by_name(identifier)
+    except sqlite3.DatabaseError as error:
+        message = f"データベースを読み取れません: {error}"
+        return _json_output("show", False, error={"code": "database_error", "message": message}) if output_format == "json" else (print_error(message) or 1)
+    if row is not None:
+        data = _cpu_payload(row)
+        if output_format == "json":
+            return _json_output("show", True, data=data)
+        print_cpu_detail(row)
+        return 0
+
+    try:
+        candidates = [] if identifier.isdecimal() else [
+            _cpu_payload(item) for item in queries.search_cpus(identifier, limit=20)
+        ]
+    except sqlite3.DatabaseError as error:
+        message = f"データベースを読み取れません: {error}"
+        return _json_output("show", False, error={"code": "database_error", "message": message}) if output_format == "json" else (print_error(message) or 1)
+    if output_format == "json":
+        return _json_output(
+            "show", False,
+            data={"candidates": candidates},
+            error={
+                "code": "not_found" if not candidates else "ambiguous",
+                "message": "CPUが見つかりません" if not candidates else "完全一致するCPUがありません。候補を確認してください",
+            },
+            exit_code=3,
+        )
+    if candidates:
+        print_info("完全一致するCPUはありません。候補を表示します:")
+        print_results(candidates)
+    else:
+        print_error(f"CPUが見つかりません: {identifier}")
+    return 3
+
+
+def _csv_preview_payload(preview):
+    return {
+        "headers": list(preview.headers),
+        "encoding": preview.encoding,
+        "delimiter": preview.delimiter,
+        "sha256": preview.sha256,
+        "source_name": preview.source_name,
+        "retrieved_at": preview.retrieved_at,
+        "profile": preview.profile,
+        "unknown_columns": list(preview.unknown_columns),
+        "counts": preview.counts,
+        "rows": [
+            {
+                "row_number": row.row_number,
+                "status": row.status,
+                "record": row.record.to_mapping() if row.record is not None else None,
+                "unknown_fields": dict(row.unknown_fields),
+                "errors": list(row.errors),
+                "clear_fields": list(row.clear_fields),
+            }
+            for row in preview.rows
+        ],
+    }
+
+
+def _parse_csv_column_mappings(values):
+    mappings = {}
+    for value in values or ():
+        if "=" not in value:
+            raise ValueError(f"列マッピングは CSV列名=CPUフィールド の形式で指定してください: {value}")
+        column, field = value.split("=", 1)
+        column, field = column.strip(), field.strip()
+        if not column or not field or column in mappings:
+            raise ValueError(f"列マッピングが空または重複しています: {value}")
+        mappings[column] = field
+    return mappings or None
+
+
+def _run_csv_preview(source, output_format, *, encoding=None, delimiter=",",
+                     source_name=None, retrieved_at=None, profile=None,
+                     column_mappings=None):
+    missing = _database_required("csv preview", output_format)
+    if missing is not None:
+        return missing
+    try:
+        preview = preview_csv_import(
+            source,
+            encoding=encoding,
+            delimiter=delimiter,
+            source_name=source_name,
+            retrieved_at=retrieved_at,
+            profile=profile,
+            column_mapping=_parse_csv_column_mappings(column_mappings),
+        )
+    except (OSError, UnicodeError, ValueError, sqlite3.DatabaseError) as error:
+        message = f"CSVプレビューに失敗しました: {error}"
+        if output_format == "json":
+            return _json_output("csv preview", False, error={
+                "code": type(error).__name__, "message": message
+            })
+        print_error(message)
+        return 1
+
+    data = _csv_preview_payload(preview)
+    if output_format == "json":
+        return _json_output("csv preview", True, data=data)
+
+    counts = preview.counts
+    print_info(
+        f"CSVプレビュー: 新規={counts['new']} 更新={counts['update']} "
+        f"曖昧={counts['ambiguous']} エラー={counts['error']}"
+    )
+    print_info(
+        f"文字コード={preview.encoding} 区切り={preview.delimiter!r} "
+        f"SHA-256={preview.sha256}"
+    )
+    for row in preview.rows:
+        name = row.record.name if row.record is not None else "(名称不明)"
+        suffix = f" — {'; '.join(row.errors)}" if row.errors else ""
+        print(f"行{row.row_number}: {row.status}: {name}{suffix}")
+    if preview.unknown_columns:
+        print_info("未対応列: " + ", ".join(preview.unknown_columns))
+    return 0 if counts["ambiguous"] == 0 and counts["error"] == 0 else 3
+
+
+def _run_stats(output_format):
+    try:
+        data = queries.get_database_stats()
+    except (sqlite3.DatabaseError, ValueError) as error:
+        message = f"データベース状態を取得できません: {error}"
+        return _json_output("stats", False, error={"code": "database_error", "message": message}) if output_format == "json" else (print_error(message) or 1)
+    if output_format == "json":
+        return _json_output("stats", True, data=data)
+    for key, value in data.items():
+        print(f"{key}: {value}")
+    return 0
+
+
+def _run_db_command(action, destination, output_format):
+    if action == "verify":
+        valid, message = queries.verify_database()
+        data = {"valid": valid, "result": message}
+        if output_format == "json":
+            return _json_output("db verify", valid, data=data, error=None if valid else {
+                "code": message, "message": "データベースの整合性検査に失敗しました"
+            })
+        print_info(f"整合性検査: {'OK' if valid else 'NG'} ({message})")
+        return 0 if valid else 1
+    if action == "backup":
+        if not destination:
+            return 2
+        try:
+            path = queries.backup_database(destination)
+        except Exception as error:
+            if output_format == "json":
+                return _json_output("db backup", False, error={
+                    "code": type(error).__name__, "message": str(error)
+                })
+            print_error(f"バックアップ失敗: {error}")
+            return 1
+        data = {"backup_path": str(path)}
+        if output_format == "json":
+            return _json_output("db backup", True, data=data)
+        print_info(f"バックアップを作成しました: {path}")
+        return 0
+    return 2
+
+
+def _interactive_search(query: str):
+    """Search and return the exact rows shown, so displayed numbers can select them."""
+    try:
+        rows = queries.search_cpus(query, limit=20)
+    except sqlite3.DatabaseError as error:
+        print_error(f"データベースを読み取れません: {error}")
+        return None
+    except (TypeError, ValueError) as error:
+        print_error(str(error))
+        return None
+    if not rows:
+        print_info(f"「{query}」に一致するCPUが見つかりませんでした。")
+    elif len(rows) == 1:
+        print_cpu_detail(rows[0])
+    else:
+        print_results(rows)
+        print_info("詳細表示: 一覧の番号を入力 / 数字で検索: :s <検索語>")
+    return rows
+
+
+def search_loop(initial_query: str | None = None):
+    print_header()
+    try:
+        stats = queries.get_database_stats()
+    except (sqlite3.DatabaseError, ValueError) as error:
+        print_error(f"データベース状態を取得できません: {error}")
+        return
+    print_info(f"DB: {stats['cpu_count']:,} 件  最終更新: {stats['last_updated'] or '不明'}")
+    last_results = None
+    while True:
+        try:
+            if initial_query:
+                query = initial_query.strip()
+                initial_query = None
+            else:
+                query = (console.input("\n[bold green]検索>[/] ") if RICH else input("\n検索> ")).strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\n終了します。")
+            break
+        if not query:
+            continue
+        if query in (":q", ":quit", "exit", "quit"):
+            print("終了します。")
+            break
+        if query in (":u", ":update", ":uf", ":fastupdate"):
+            try:
+                _, code = _run_update_in_adapter(fast=query in (":uf", ":fastupdate"))
+                if code == 130:
+                    print_info("更新を中断しました。保存済みデータは保持されています。")
+                last_results = None
+            except Exception as error:
+                print_error(f"更新失敗: {error}")
+            continue
+        if query == ":b":
+            if last_results is None:
+                print_info("戻れる検索結果がありません。")
+            elif not last_results:
+                print_info("直前の検索結果は0件でした。")
+            else:
+                print_results(last_results)
+                print_info("詳細表示: 一覧の番号を入力 / 数字で検索: :s <検索語>")
+            continue
+        if query.startswith(":s "):
+            last_results = _interactive_search(query[3:].strip())
+            continue
+        if query.isdecimal() and last_results is not None:
+            index = int(query)
+            if 1 <= index <= len(last_results):
+                print_cpu_detail(last_results[index - 1])
+            else:
+                print_error(f"選択番号が範囲外です。1～{len(last_results)} を指定してください。")
+            continue
+        last_results = _interactive_search(query)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="CPU情報オフライン検索ツール",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("query", nargs="?", help="search/show/stats/update/db または従来形式の検索語")
+    parser.add_argument("target", nargs="?", help="検索語、CPU ID/名称、またはdbサブコマンド")
+    parser.add_argument("extra", nargs="?", help="db backupの保存先")
+    parser.add_argument("--db-location", help="DB保存先ディレクトリ。CPU_DATA_HOMEが優先されます")
+    parser.add_argument("--mode", choices=("fast", "full"), help="updateコマンドの更新モード")
+    parser.add_argument("--limit", type=int, default=20, help="searchの最大表示件数")
+    parser.add_argument("--format", choices=("text", "json"), default="text", help="出力形式")
+    parser.add_argument("--encoding", help="CSV文字コードを明示指定")
+    parser.add_argument("--delimiter", default=",", help="CSV区切り文字（既定: ,）")
+    parser.add_argument("--source-name", help="CSVデータの出所名（記録用）")
+    parser.add_argument("--retrieved-at", help="データ取得日時（ISO 8601等。自動補完しません）")
+    parser.add_argument("--profile", help="変換プロファイル名")
+    parser.add_argument(
+        "--map", dest="csv_mappings", action="append", metavar="COLUMN=FIELD",
+        help="CSV列をCPUフィールドへ明示マッピング（複数指定可）",
+    )
+    update_group = parser.add_mutually_exclusive_group()
+    update_group.add_argument("--update", action="store_true", help="データを完全更新")
+    update_group.add_argument("--fast", action="store_true", help="高速更新（PassMarkのみ）")
+    args = parser.parse_args(argv)
+
+    commands = {"search", "show", "stats", "update", "db", "csv"}
+    if args.mode and args.query != "update":
+        parser.error("--mode は update コマンドと併用してください")
+    if args.mode and (args.fast or args.update):
+        parser.error("--mode と --fast / --update は併用できません")
+    if args.query == "update" and not args.mode:
+        parser.error("update コマンドには --mode fast または --mode full が必要です")
+    if args.query == "update" and (args.target or args.extra):
+        parser.error("updateに余分な位置引数は指定できません")
+    if args.query is not None and args.query != "update" and (args.fast or args.update):
+        parser.error("--fast / --update は引数なしの起動、または update コマンド専用です")
+    if args.limit < 1:
+        parser.error("--limit は1以上を指定してください")
+    if args.query == "csv" and args.target != "preview":
+        parser.error("csvには preview を指定してください")
+    if args.query == "csv" and not args.extra:
+        parser.error("csv previewにはCSVファイルのパスが必要です")
+    if args.query == "csv" and args.delimiter not in (",", "\\t", ";"):
+        parser.error("--delimiter は , / \\t / ; のいずれかを指定してください")
+    if args.query != "csv" and any((
+        args.encoding, args.source_name, args.retrieved_at, args.profile,
+        args.csv_mappings, args.delimiter != ",",
+    )):
+        parser.error("CSV専用オプションは csv preview と併用してください")
+    if args.query == "db" and args.target not in ("verify", "backup"):
+        parser.error("dbには verify または backup を指定してください")
+    if args.query == "db" and args.target == "verify" and args.extra:
+        parser.error("db verifyに余分な引数は指定できません")
+    if args.query == "db" and args.target == "backup" and not args.extra:
+        parser.error("db backupには保存先を指定してください")
+    if args.query in ("search", "show") and not args.target:
+        parser.error(f"{args.query}には検索語またはCPU ID/名称が必要です")
+    if args.query in ("stats",) and args.target:
+        parser.error("statsに余分な引数は指定できません")
+    if args.query != "update" and args.mode:
+        parser.error("--mode は update コマンドと併用してください")
+    if args.query in commands and args.query not in ("db", "update", "csv") and args.extra:
+        parser.error("余分な引数が指定されています")
+
+    try:
+        configure_database(
+            db_location=args.db_location,
+            interactive=bool(sys.stdin and sys.stdin.isatty()),
+        )
+    except DatabaseSelectionRequired as error:
+        print_error(str(error))
+        return 2
+    except Exception as error:
+        print_error(f"DB保存先の決定に失敗しました: {error}")
+        return 1
+
+    if args.query == "search":
+        return _run_search(args.target, args.limit, args.format)
+    if args.query == "show":
+        return _run_show(args.target, args.format)
+    if args.query == "stats":
+        return _run_stats(args.format)
+    if args.query == "db":
+        return _run_db_command(args.target, args.extra, args.format)
+    if args.query == "csv":
+        return _run_csv_preview(
+            args.extra, args.format, encoding=args.encoding,
+            delimiter=args.delimiter, source_name=args.source_name,
+            retrieved_at=args.retrieved_at, profile=args.profile,
+            column_mappings=args.csv_mappings,
+        )
+    if args.query == "update" or args.update or args.fast:
+        try:
+            result, code = _run_update_in_adapter(
+                fast=args.fast or args.mode == "fast"
+            )
+        except Exception as error:
+            if args.format == "json":
+                return _json_output("update", False, error={
+                    "code": type(error).__name__, "message": str(error)
+                })
+            print_error(f"更新失敗: {error}")
+            return 1
+        if code == 130:
+            if args.format == "json":
+                return _json_output("update", False, data={"status": "cancelled"}, exit_code=130)
+            print_info("更新を中断しました。保存済みデータは保持されています。")
+            return 130
+        if args.format == "json":
+            return _json_output("update", True, data={
+                "mode": result.mode, "status": result.status, "total": result.total,
+                "processed": result.processed, "succeeded": result.succeeded,
+                "not_found": result.not_found, "database_count": result.database_count,
+            })
+        print_info(f"更新完了: DB {result.database_count}件")
+        return 0
+
+    if not ensure_db():
+        return 1
+    search_loop(initial_query=args.query)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

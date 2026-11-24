@@ -1,0 +1,301 @@
+import io
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import requests
+
+from cpu_data.application import update as updater
+
+
+PASSMARK_HTML = """
+<html><body>
+<table id="cputable">
+  <tr><th>CPU Name</th><th>CPU Mark</th></tr>
+  <tr><td><a href="/cpu.php?cpu=AMD+Ryzen+9+7950X">AMD Ryzen 9 7950X</a></td><td>62,116</td></tr>
+  <tr><td><a href="/cpu.php?cpu=Intel+Core+i7-13700K">Intel Core i7-13700K</a></td><td>45,646</td></tr>
+  <tr><td><a href="/cpu.php?cpu=Unknown">Unknown CPU</a></td><td>NA</td></tr>
+</table>
+</body></html>
+"""
+
+NANOREVIEW_HTML = """
+<html><head><meta name="description" content="16-core processor with 24 threads for socket LGA-1700. Base clock is 3.4 GHz and can boost up to 5.3 GHz. Integrated graphics Intel UHD Graphics 770."></head>
+<body>
+<ul class="flex">
+  <li>Cores: 16</li>
+  <li>L3 cache: 30MB (shared)</li>
+  <li>TDP: 125 W (max. boost up to 253 W)</li>
+  <li>Transistor size: 10 nm</li>
+</ul>
+<table>
+  <tr><td>Codename</td><td>Raptor Lake</td></tr>
+  <tr><td>Total Cores</td><td>16</td></tr>
+  <tr><td>Total Threads</td><td>24</td></tr>
+  <tr><td>Base Frequency (P)</td><td>3.4 GHz</td></tr>
+  <tr><td>Turbo Boost Frequency (P)</td><td>5.3 GHz</td></tr>
+  <tr><td>Socket</td><td>LGA-1700</td></tr>
+  <tr><td>Fabrication Process</td><td>10 nm</td></tr>
+  <tr><td>TDP (PL1)</td><td>125 W</td></tr>
+  <tr><td>Memory Types</td><td>DDR5-5600 DDR4-3200</td></tr>
+  <tr><td>Integrated GPU</td><td>Intel UHD Graphics 770</td></tr>
+</table>
+</body></html>
+"""
+
+
+class UpdaterParserTests(unittest.TestCase):
+    def test_cpu_list_includes_multiple_vendors_and_parses_scores(self):
+        rows = updater._parse_cpu_list_html(PASSMARK_HTML)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]["name"], "AMD Ryzen 9 7950X")
+        self.assertEqual(rows[0]["passmark_score"], 62116)
+        self.assertEqual(rows[0]["detail_url"], "https://www.cpubenchmark.net/cpu.php?cpu=AMD+Ryzen+9+7950X")
+        self.assertIsNone(rows[2]["passmark_score"])
+
+    def test_passmark_progress_is_written_to_stderr_not_stdout(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        response = SimpleNamespace(text=PASSMARK_HTML)
+        with patch.object(updater, "_get", return_value=response):
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                rows = updater.fetch_cpu_list()
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("[PassMark] CPU一覧取得中", stderr.getvalue())
+
+    def test_cpu_list_rejects_unrecognized_html(self):
+        with self.assertRaises(updater.DataSourceParseError):
+            updater._parse_cpu_list_html("<html><body>layout changed</body></html>")
+
+    def test_nanoreview_table_fields_are_mapped_to_correct_columns(self):
+        specs = updater._parse_nanoreview_html(NANOREVIEW_HTML)
+        row = updater._parse_specs(
+            "Intel Core i7-13700K", specs, "https://www.cpubenchmark.net/cpu.php?id=1", 45646
+        )
+        self.assertEqual(row["family"], "Raptor Lake")
+        self.assertEqual(row["cores"], "16")
+        self.assertEqual(row["threads"], "24")
+        self.assertEqual(row["base_clock"], "3.4 GHz")
+        self.assertEqual(row["boost_clock"], "5.3 GHz")
+        self.assertEqual(row["tdp"], "125 W")
+        self.assertEqual(row["socket"], "LGA-1700")
+        self.assertEqual(row["process"], "10 nm")
+        self.assertEqual(row["memory_support"], "DDR5-5600 DDR4-3200")
+        self.assertEqual(row["igpu"], "Intel UHD Graphics 770")
+        self.assertNotEqual(row["family"], specs["l3 cache"])
+
+    def test_nanoreview_404_is_a_miss(self):
+        response = requests.Response()
+        response.status_code = 404
+        error = requests.HTTPError("not found", response=response)
+        with patch.object(updater, "_get", side_effect=error):
+            self.assertEqual(updater.fetch_nanoreview("missing-cpu"), {})
+
+    def test_nanoreview_server_error_is_not_treated_as_a_miss(self):
+        response = requests.Response()
+        response.status_code = 503
+        error = requests.HTTPError("unavailable", response=response)
+        with patch.object(updater, "_get", side_effect=error):
+            with self.assertRaises(requests.HTTPError):
+                updater.fetch_nanoreview("cpu")
+
+    def test_cpu_slug(self):
+        self.assertEqual(
+            updater._cpu_to_slug("Intel Core i5-4300U @ 1.90GHz"),
+            "intel-core-i5-4300u",
+        )
+
+    def test_prefers_full_integrated_graphics_name(self):
+        record = updater._parse_specs(
+            "Intel Core i7-13700K",
+            {
+                "integrated gpu": "UHD Graphics 770",
+                "integrated graphics": "Intel UHD Graphics 770",
+            },
+            "passmark-url",
+            45646,
+        )
+        self.assertEqual(record["igpu"], "Intel UHD Graphics 770")
+
+    def test_all_vendor_list_endpoint_and_vendor_classification(self):
+        self.assertTrue(updater.CPU_LIST_URL.endswith("/cpu-list/all"))
+        self.assertEqual(updater._brand("AMD Ryzen 9 7950X"), "AMD")
+        self.assertEqual(updater._brand("Apple M3 Max"), "Apple")
+        self.assertEqual(updater._brand("Qualcomm Snapdragon X Elite"), "Qualcomm")
+        self.assertEqual(updater._brand("AArch64"), "ARM")
+
+    def test_vendor_classification_prefers_explicit_product_brand(self):
+        self.assertEqual(updater._brand("Apple M4 Max 14 Core"), "Apple")
+        self.assertEqual(
+            updater._brand("NVIDIA RTX Spark N1X (6144-core GPU, 20-core)"),
+            "NVIDIA",
+        )
+        self.assertEqual(updater._brand("Intel Core i7-13700K"), "Intel")
+        self.assertEqual(updater._brand("Core i7-13700K"), "Intel")
+        self.assertEqual(updater._brand("Qualcomm Snapdragon 888"), "Qualcomm")
+
+    def test_nanoreview_url_handles_cpu_soc_and_passmark_suffixes(self):
+        self.assertEqual(
+            updater._nanoreview_url("Apple M4 Max 14 Core"),
+            "https://nanoreview.net/en/cpu/apple-m4-max-14-core",
+        )
+        self.assertEqual(
+            updater._nanoreview_url("NVIDIA RTX Spark N1X (6144-core GPU, 20-core)"),
+            "https://nanoreview.net/en/cpu/nvidia-rtx-spark-n1x",
+        )
+        self.assertEqual(
+            updater._nanoreview_url("Snapdragon888"),
+            "https://nanoreview.net/en/soc/qualcomm-snapdragon-875",
+        )
+
+    def test_nanoreview_rejects_unrecognized_html(self):
+        with self.assertRaises(updater.DataSourceParseError):
+            updater._parse_nanoreview_html("<html><body>maintenance page</body></html>")
+
+    def test_passmark_network_error_propagates(self):
+        with patch.object(updater, "_get", side_effect=requests.ConnectionError("offline")):
+            with self.assertRaises(requests.ConnectionError):
+                updater.fetch_cpu_list()
+
+    def test_http_client_wraps_network_errors_but_preserves_status_errors(self):
+        with patch.object(updater.SESSION, "get", side_effect=requests.ConnectionError("offline")):
+            with self.assertRaises(updater.DataSourceError):
+                updater._get("https://example.invalid")
+
+        response = requests.Response()
+        response.status_code = 404
+        response.url = "https://example.invalid/not-found"
+        with patch.object(updater.SESSION, "get", return_value=response):
+            with self.assertRaises(requests.HTTPError):
+                updater._get(response.url)
+
+    def test_interruption_flushes_processed_records_and_checkpoint(self):
+        items = [
+            {"name": "Intel Core i5-1", "passmark_score": 100, "detail_url": "passmark-1"},
+            {"name": "Intel Core i5-2", "passmark_score": 200, "detail_url": "passmark-2"},
+        ]
+        meta = {"update_in_progress": "false"}
+        with patch.object(updater, "init_db"), \
+             patch.object(updater, "fetch_cpu_list", return_value=items), \
+             patch.object(updater, "get_meta", side_effect=lambda key: meta.get(key)), \
+             patch.object(updater, "set_meta") as set_meta, \
+             patch.object(updater, "upsert_many") as upsert_many, \
+             patch.object(updater, "fetch_nanoreview", side_effect=[{"cores": "4"}, requests.ConnectionError("offline")]), \
+             patch.object(updater.time, "sleep"):
+            with self.assertRaises(requests.ConnectionError):
+                updater.run_update()
+
+        saved = upsert_many.call_args.args[0]
+        self.assertEqual([row["name"] for row in saved], ["Intel Core i5-1"])
+        set_meta.assert_any_call("update_checkpoint", "Intel Core i5-1")
+        set_meta.assert_any_call("update_in_progress", "true")
+
+    def test_full_update_resumes_after_last_checkpoint(self):
+        items = [
+            {"name": "Intel Core i5-1", "passmark_score": 100, "detail_url": "passmark-1"},
+            {"name": "Intel Core i5-2", "passmark_score": 200, "detail_url": "passmark-2"},
+            {"name": "Intel Core i5-3", "passmark_score": 300, "detail_url": "passmark-3"},
+        ]
+        meta = {
+            "update_in_progress": "true",
+            "update_checkpoint": "Intel Core i5-2",
+            "update_cpu_list_fingerprint": updater._cpu_list_fingerprint(items),
+        }
+        with patch.object(updater, "init_db"), \
+             patch.object(updater, "fetch_cpu_list", return_value=items), \
+             patch.object(updater, "get_meta", side_effect=lambda key: meta.get(key)), \
+             patch.object(updater, "set_meta") as set_meta, \
+             patch.object(updater, "upsert_many") as upsert_many, \
+             patch.object(updater, "fetch_nanoreview", return_value={}) as fetch_nano, \
+             patch.object(updater, "count_cpus", return_value=3), \
+             patch.object(updater.time, "sleep"):
+            updater.run_update()
+
+        fetch_nano.assert_called_once_with(updater._nanoreview_url("Intel Core i5-3"))
+        saved = upsert_many.call_args.args[0]
+        self.assertEqual([row["name"] for row in saved], ["Intel Core i5-3"])
+        set_meta.assert_any_call("update_in_progress", "false")
+        set_meta.assert_any_call("update_checkpoint", "")
+
+
+    def test_changed_source_order_restarts_full_update_from_beginning(self):
+        previous_items = [
+            {"name": "CPU A", "passmark_score": 100, "detail_url": "url-a"},
+            {"name": "CPU B", "passmark_score": 200, "detail_url": "url-b"},
+            {"name": "CPU C", "passmark_score": 300, "detail_url": "url-c"},
+        ]
+        current_items = [previous_items[1], previous_items[0], previous_items[2]]
+        meta = {
+            "update_in_progress": "true",
+            "update_checkpoint": "CPU B",
+            "update_cpu_list_fingerprint": updater._cpu_list_fingerprint(previous_items),
+        }
+        events = []
+        with patch.object(updater, "init_db"), \
+             patch.object(updater, "fetch_cpu_list", return_value=current_items), \
+             patch.object(updater, "get_meta", side_effect=lambda key: meta.get(key)), \
+             patch.object(updater, "set_meta") as set_meta, \
+             patch.object(updater, "upsert_many"), \
+             patch.object(updater, "fetch_nanoreview", return_value={}) as fetch_nano, \
+             patch.object(updater, "count_cpus", return_value=3), \
+             patch.object(updater.time, "sleep"):
+            updater.run_update(event_handler=events.append)
+
+        self.assertEqual(fetch_nano.call_count, 3)
+        started = next(event for event in events if isinstance(event, updater.UpdateStarted))
+        self.assertEqual(started.start_index, 0)
+        set_meta.assert_any_call(
+            "update_cpu_list_fingerprint",
+            updater._cpu_list_fingerprint(current_items),
+        )
+        set_meta.assert_any_call("update_checkpoint", "")
+
+    def test_changed_source_score_or_url_restarts_full_update(self):
+        old_items = [
+            {"name": "CPU A", "passmark_score": 100, "detail_url": "url-a"},
+            {"name": "CPU B", "passmark_score": 200, "detail_url": "url-b"},
+        ]
+        changed_items = [
+            {"name": "CPU A", "passmark_score": 101, "detail_url": "url-a"},
+            {"name": "CPU B", "passmark_score": 200, "detail_url": "url-b-new"},
+        ]
+        meta = {
+            "update_in_progress": "true",
+            "update_checkpoint": "CPU A",
+            "update_cpu_list_fingerprint": updater._cpu_list_fingerprint(old_items),
+        }
+        with patch.object(updater, "init_db"), \
+             patch.object(updater, "fetch_cpu_list", return_value=changed_items), \
+             patch.object(updater, "get_meta", side_effect=lambda key: meta.get(key)), \
+             patch.object(updater, "set_meta"), \
+             patch.object(updater, "upsert_many"), \
+             patch.object(updater, "fetch_nanoreview", return_value={}) as fetch_nano, \
+             patch.object(updater, "count_cpus", return_value=2), \
+             patch.object(updater.time, "sleep"):
+            updater.run_update()
+
+        self.assertEqual(fetch_nano.call_count, 2)
+
+    def test_legacy_checkpoint_without_fingerprint_restarts_from_beginning(self):
+        items = [
+            {"name": "CPU A", "passmark_score": 100, "detail_url": "url-a"},
+            {"name": "CPU B", "passmark_score": 200, "detail_url": "url-b"},
+        ]
+        meta = {"update_in_progress": "true", "update_checkpoint": "CPU A"}
+        with patch.object(updater, "init_db"), \
+             patch.object(updater, "fetch_cpu_list", return_value=items), \
+             patch.object(updater, "get_meta", side_effect=lambda key: meta.get(key)), \
+             patch.object(updater, "set_meta"), \
+             patch.object(updater, "upsert_many"), \
+             patch.object(updater, "fetch_nanoreview", return_value={}) as fetch_nano, \
+             patch.object(updater, "count_cpus", return_value=2), \
+             patch.object(updater.time, "sleep"):
+            updater.run_update()
+
+        self.assertEqual(fetch_nano.call_count, 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

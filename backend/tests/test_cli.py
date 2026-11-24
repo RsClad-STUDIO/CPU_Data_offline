@@ -1,0 +1,350 @@
+import io
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from cpu_data import cli
+from cpu_data.application import update as updater
+
+
+class CLITests(unittest.TestCase):
+    def test_conflicting_update_modes_are_rejected(self):
+        with patch.object(sys, "argv", ["cpu_lookup.py", "--fast", "--update"]):
+            with self.assertRaises(SystemExit) as raised:
+                cli.main()
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_update_flags_are_rejected_with_other_commands(self):
+        for args in (
+            ["cpu_lookup.py", "search", "13700K", "--fast"],
+            ["cpu_lookup.py", "stats", "--update"],
+            ["cpu_lookup.py", "i7-13700K", "--fast"],
+        ):
+            with self.subTest(args=args), patch.object(sys, "argv", args):
+                with self.assertRaises(SystemExit) as raised:
+                    cli.main()
+            self.assertEqual(raised.exception.code, 2)
+
+    def test_legacy_search_does_not_create_or_query_a_missing_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing" / "cpu.db"
+            with patch.object(sys, "argv", ["cpu_lookup.py", "i7-13700K"]), \
+                 patch.object(cli, "configure_database"), \
+                 patch.object(cli.database_store, "DB_PATH", missing), \
+                 patch.object(cli, "search_loop") as search_loop, \
+                 patch("sys.stdout", new_callable=io.StringIO):
+                self.assertEqual(cli.main(), 1)
+            search_loop.assert_not_called()
+            self.assertFalse(missing.exists())
+
+    def test_update_failure_returns_nonzero_exit(self):
+        with patch.object(sys, "argv", ["cpu_lookup.py", "--update"]), \
+             patch.object(cli, "configure_database"), \
+             patch.object(cli, "_run_update_in_adapter", side_effect=RuntimeError("source unavailable")):
+            self.assertEqual(cli.main(), 1)
+
+    def test_explicit_update_subcommand_supports_mode(self):
+        result = SimpleNamespace(
+            mode="full", status="completed", total=10, processed=10,
+            succeeded=8, not_found=2, database_count=10,
+        )
+        with patch.object(sys, "argv", ["cpu_lookup.py", "update", "--mode", "full"]), \
+             patch.object(cli, "configure_database"), \
+             patch.object(cli, "_run_update_in_adapter", return_value=(result, 0)) as run_update, \
+             patch("sys.stdout", new_callable=io.StringIO):
+            self.assertEqual(cli.main(), 0)
+        run_update.assert_called_once_with(fast=False)
+
+    def test_missing_database_does_not_trigger_automatic_download(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing" / "cpu.db"
+            with patch.object(cli.database_store, "DB_PATH", missing), \
+                 patch.object(cli, "_run_update_in_adapter") as run_update, \
+                 patch("sys.stdout", new_callable=io.StringIO):
+                self.assertFalse(cli.ensure_db())
+            run_update.assert_not_called()
+
+    def test_help_exits_successfully(self):
+        with patch.object(sys, "argv", ["cpu_lookup.py", "--help"]):
+            with self.assertRaises(SystemExit) as raised:
+                cli.main()
+        self.assertEqual(raised.exception.code, 0)
+
+    def test_search_json_uses_application_query_service(self):
+        row = {"id": 1, "name": "Intel Core i7-13700K", "passmark_score": 46600}
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpu.db"
+            db_path.touch()
+            with patch.object(sys, "argv", ["cpu_lookup.py", "search", "13700K", "--format", "json"]), \
+                 patch.object(cli, "configure_database"), \
+                 patch.object(cli.database_store, "DB_PATH", db_path), \
+                 patch.object(cli.queries, "search_cpus", return_value=[row]) as search, \
+                 patch("sys.stdout", output):
+                code = cli.main()
+        payload = json.loads(output.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["items"][0]["name"], row["name"])
+        search.assert_called_once_with("13700K", limit=20)
+
+    def test_csv_preview_json_uses_read_only_application_service(self):
+        output = io.StringIO()
+        preview = SimpleNamespace(
+            headers=("CPU Name", "Brand"),
+            encoding="utf-8",
+            delimiter=",",
+            sha256="a" * 64,
+            source_name="vendor export",
+            retrieved_at="2026-11-24T10:00:00+09:00",
+            profile="vendor-v1",
+            unknown_columns=(),
+            counts={"new": 1, "update": 0, "ambiguous": 0, "error": 0},
+            rows=(),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpu.db"
+            db_path.touch()
+            with patch.object(
+                sys, "argv",
+                ["cpu_lookup.py", "csv", "preview", "sample.csv", "--format", "json",
+                 "--source-name", "vendor export", "--map", "CPU= name"],
+            ), patch.object(cli, "configure_database"), \
+                 patch.object(cli.database_store, "DB_PATH", db_path), \
+                 patch.object(cli, "preview_csv_import", return_value=preview) as preview_csv, \
+                 patch("sys.stdout", output):
+                code = cli.main()
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["command"], "csv preview")
+        self.assertEqual(payload["data"]["counts"]["new"], 1)
+        preview_csv.assert_called_once_with(
+            "sample.csv", encoding=None, delimiter=",",
+            source_name="vendor export", retrieved_at=None, profile=None,
+            column_mapping={"CPU": "name"},
+        )
+
+    def test_csv_preview_does_not_create_missing_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing" / "cpu.db"
+            with patch.object(
+                sys, "argv",
+                ["cpu_lookup.py", "csv", "preview", "sample.csv"],
+            ), patch.object(cli, "configure_database"), \
+                 patch.object(cli.database_store, "DB_PATH", missing), \
+                 patch.object(cli, "preview_csv_import") as preview_csv, \
+                 patch("sys.stdout", new_callable=io.StringIO):
+                self.assertEqual(cli.main(), 1)
+        preview_csv.assert_not_called()
+        self.assertFalse(missing.exists())
+
+    def test_show_json_returns_not_found_envelope(self):
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpu.db"
+            db_path.touch()
+            with patch.object(sys, "argv", ["cpu_lookup.py", "show", "missing", "--format", "json"]), \
+                 patch.object(cli, "configure_database"), \
+                 patch.object(cli.database_store, "DB_PATH", db_path), \
+                 patch.object(cli.queries, "get_cpu_by_name", return_value=None), \
+                 patch.object(cli.queries, "search_cpus", return_value=[]), \
+                 patch("sys.stdout", output):
+                code = cli.main()
+        payload = json.loads(output.getvalue())
+        self.assertEqual(code, 3)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error"]["code"], "not_found")
+
+    def test_stats_json_returns_database_metadata(self):
+        output = io.StringIO()
+        stats = {"database_path": "cpu.db", "database_exists": True, "cpu_count": 3}
+        with patch.object(sys, "argv", ["cpu_lookup.py", "stats", "--format", "json"]), \
+             patch.object(cli, "configure_database"), \
+             patch.object(cli.queries, "get_database_stats", return_value=stats), \
+             patch("sys.stdout", output):
+            code = cli.main()
+        payload = json.loads(output.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["data"], stats)
+
+    def test_db_verify_json_reports_integrity(self):
+        output = io.StringIO()
+        with patch.object(sys, "argv", ["cpu_lookup.py", "db", "verify", "--format", "json"]), \
+             patch.object(cli, "configure_database"), \
+             patch.object(cli.queries, "verify_database", return_value=(True, "ok")), \
+             patch("sys.stdout", output):
+            code = cli.main()
+        payload = json.loads(output.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["data"]["valid"])
+
+    def test_db_backup_json_returns_path(self):
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "backup.db"
+            with patch.object(sys, "argv", ["cpu_lookup.py", "db", "backup", str(destination), "--format", "json"]), \
+                 patch.object(cli, "configure_database"), \
+                 patch.object(cli.queries, "backup_database", return_value=destination), \
+                 patch("sys.stdout", output):
+                code = cli.main()
+        payload = json.loads(output.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["data"]["backup_path"], str(destination))
+
+
+    def test_legacy_update_entrypoint_routes_fast_mode_through_cli(self):
+        with patch("cpu_data.cli.main", return_value=0) as cli_main:
+            self.assertEqual(updater.main(["--fast"]), 0)
+        cli_main.assert_called_once_with(["--fast"])
+
+    def test_legacy_update_entrypoint_defaults_to_full_update(self):
+        with patch("cpu_data.cli.main", return_value=0) as cli_main:
+            self.assertEqual(updater.main([]), 0)
+        cli_main.assert_called_once_with(["--update"])
+
+    def test_legacy_query_remains_interactive_search(self):
+        with patch.object(sys, "argv", ["cpu_lookup.py", "i7-13700K"]), \
+             patch.object(cli, "configure_database"), \
+             patch.object(cli, "ensure_db", return_value=True), \
+             patch.object(cli, "search_loop") as search_loop:
+            self.assertEqual(cli.main(), 0)
+        search_loop.assert_called_once_with(initial_query="i7-13700K")
+
+
+    def test_interactive_search_number_selects_the_displayed_result(self):
+        rows = [
+            {"id": 101, "name": "Intel Core i7-13700K", "brand": "Intel",
+             "cores": 16, "threads": 24, "tdp": 125, "passmark_score": 46600},
+            {"id": 102, "name": "Intel Core i5-14500", "brand": "Intel",
+             "cores": 14, "threads": 20, "tdp": 65, "passmark_score": 30000},
+        ]
+        with patch.object(cli, "RICH", False), \
+             patch.object(cli.queries, "get_database_stats", return_value={
+                 "cpu_count": 2, "last_updated": None
+             }), \
+             patch.object(cli.queries, "search_cpus", return_value=rows) as search, \
+             patch("builtins.input", side_effect=["13700K", "1", ":q"]), \
+             patch.object(cli, "print_cpu_detail") as show_detail, \
+             patch.object(cli, "print_results"):
+            cli.search_loop()
+
+        search.assert_called_once_with("13700K", limit=20)
+        show_detail.assert_called_once_with(rows[0])
+
+    def test_interactive_search_rejects_out_of_range_selection(self):
+        rows = [
+            {"id": 101, "name": "Intel Core i7-13700K", "brand": "Intel",
+             "cores": 16, "threads": 24, "tdp": 125, "passmark_score": 46600},
+            {"id": 102, "name": "Intel Core i5-14500", "brand": "Intel",
+             "cores": 14, "threads": 20, "tdp": 65, "passmark_score": 30000},
+        ]
+        with patch.object(cli, "RICH", False), \
+             patch.object(cli.queries, "get_database_stats", return_value={
+                 "cpu_count": 2, "last_updated": None
+             }), \
+             patch.object(cli.queries, "search_cpus", return_value=rows), \
+             patch("builtins.input", side_effect=["13700K", "3", ":q"]), \
+             patch.object(cli, "print_cpu_detail") as show_detail, \
+             patch.object(cli, "print_error") as show_error:
+            cli.search_loop()
+
+        show_detail.assert_not_called()
+        show_error.assert_called_once_with("選択番号が範囲外です。1～2 を指定してください。")
+
+    def test_back_command_restores_previous_results_without_searching_again(self):
+        rows = [
+            {"id": 101, "name": "Intel Core i7-13700K", "brand": "Intel",
+             "cores": 16, "threads": 24, "tdp": 125, "passmark_score": 46600},
+            {"id": 102, "name": "Intel Core i5-14500", "brand": "Intel",
+             "cores": 14, "threads": 20, "tdp": 65, "passmark_score": 30000},
+        ]
+        with (
+            patch.object(cli, "RICH", False),
+            patch.object(cli.queries, "get_database_stats", return_value={
+                "cpu_count": 2, "last_updated": None
+            }),
+            patch.object(cli.queries, "search_cpus", return_value=rows) as search,
+            patch("builtins.input", side_effect=["145", "1", ":b", "2", ":q"]),
+            patch.object(cli, "print_cpu_detail") as show_detail,
+            patch.object(cli, "print_results") as show_results,
+        ):
+            cli.search_loop()
+
+        search.assert_called_once_with("145", limit=20)
+        self.assertEqual(
+            show_detail.call_args_list,
+            [unittest.mock.call(rows[0]), unittest.mock.call(rows[1])],
+        )
+        self.assertEqual(
+            show_results.call_args_list,
+            [unittest.mock.call(rows), unittest.mock.call(rows)],
+        )
+
+    def test_back_command_without_previous_search_shows_message(self):
+        with (
+            patch.object(cli, "RICH", False),
+            patch.object(cli.queries, "get_database_stats", return_value={
+                "cpu_count": 2, "last_updated": None
+            }),
+            patch("builtins.input", side_effect=[":b", ":q"]),
+            patch.object(cli, "print_info") as show_info,
+        ):
+            cli.search_loop()
+
+        show_info.assert_any_call("戻れる検索結果がありません。")
+
+    def test_interactive_numeric_search_can_be_forced_with_search_prefix(self):
+        rows = [{"id": 201, "name": "AMD Ryzen 7 7800X3D", "brand": "AMD",
+                 "cores": 8, "threads": 16, "tdp": 120, "passmark_score": 35000}]
+        with patch.object(cli, "RICH", False), \
+             patch.object(cli.queries, "get_database_stats", return_value={
+                 "cpu_count": 1, "last_updated": None
+             }), \
+             patch.object(cli.queries, "search_cpus", return_value=rows) as search, \
+             patch("builtins.input", side_effect=[":s 145", ":q"]), \
+             patch.object(cli, "print_cpu_detail"):
+            cli.search_loop()
+
+        search.assert_called_once_with("145", limit=20)
+
+
+    def test_update_subcommand_rejects_extra_positional_arguments(self):
+        for args in (
+            ["cpu_lookup.py", "update", "unexpected", "--mode", "fast"],
+            ["cpu_lookup.py", "update", "--mode", "full", "unexpected", "another"],
+        ):
+            with self.subTest(args=args), patch.object(sys, "argv", args):
+                with self.assertRaises(SystemExit) as raised:
+                    cli.main()
+            self.assertEqual(raised.exception.code, 2)
+
+
+    def test_full_update_progress_uses_absolute_position_when_resumed(self):
+        event = updater.UpdateProgress(
+            mode="full", processed=1, total=4, cpu_name="CPU D",
+            status="success", succeeded=1, not_found=0, position=3,
+        )
+        stderr = io.StringIO()
+        with patch("sys.stderr", stderr):
+            cli._event_to_stderr(event)
+        self.assertIn("進捗: 3/4", stderr.getvalue())
+
+    def test_fast_update_progress_uses_current_run_processed_count(self):
+        event = updater.UpdateProgress(
+            mode="fast", processed=1, total=4, cpu_name="CPU A",
+            status="success", succeeded=1, not_found=0, position=3,
+        )
+        stderr = io.StringIO()
+        with patch("sys.stderr", stderr):
+            cli._event_to_stderr(event)
+        self.assertIn("進捗: 1/4", stderr.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()
