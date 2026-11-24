@@ -21,7 +21,7 @@ class CSVMappingError(ValueError):
 # write-enabled import. Blank/NA/null cells continue to mean "not supplied".
 CSV_CLEAR_MARKER = "__CLEAR__"
 # Prefix the reserved marker with one backslash to import it as literal text.
-CSV_CLEAR_ESCAPE = "\\\\__CLEAR__"
+CSV_CLEAR_ESCAPE = "\\__CLEAR__"
 
 
 @dataclass(frozen=True, slots=True)
