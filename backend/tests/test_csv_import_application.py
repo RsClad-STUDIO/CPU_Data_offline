@@ -1,4 +1,5 @@
 import hashlib
+import os
 from contextlib import closing
 import sqlite3
 import tempfile
@@ -250,6 +251,32 @@ class CSVImportApplicationTests(unittest.TestCase):
 
             self.assertEqual(
                 hashlib.sha256(db_path.read_bytes()).hexdigest(),
+                before,
+            )
+
+    def test_hardlink_to_configured_application_database_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            application_db = Path(directory) / "application.db"
+            linked_db = Path(directory) / "temporary-alias.db"
+            self._initialize_database(application_db, [{
+                "name": "CPU A",
+                "brand": "Original",
+            }])
+            try:
+                os.link(application_db, linked_db)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f"Hard links are unavailable in this environment: {error}")
+
+            from cpu_data.infrastructure.importers.csv_mapper import preview_csv
+            preview = preview_csv(b"CPU Name,Brand\\nCPU A,Changed\\n")
+            before = hashlib.sha256(application_db.read_bytes()).hexdigest()
+
+            with patch.object(database, "DB_PATH", str(application_db)):
+                with self.assertRaisesRegex(ValueError, "configured application database"):
+                    apply_csv_import(preview, database_path=linked_db)
+
+            self.assertEqual(
+                hashlib.sha256(application_db.read_bytes()).hexdigest(),
                 before,
             )
 
