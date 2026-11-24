@@ -10,4 +10,4 @@ def normalize_cpu_name(name: str) -> str:
     if not isinstance(name, str) or not name.strip():
         raise ValueError("CPU name must be a non-empty string")
     value = unicodedata.normalize("NFKC", name)
-    return re.sub(r"\\s+", " ", value).strip().casefold()
+    return re.sub(r"\s+", " ", value).strip().casefold()

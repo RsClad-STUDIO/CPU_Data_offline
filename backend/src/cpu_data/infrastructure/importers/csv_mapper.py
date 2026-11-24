@@ -70,7 +70,7 @@ _VALID_FIELDS = frozenset(CPURecord.__dataclass_fields__)
 
 def _header_key(value: str) -> str:
     normalized = unicodedata.normalize("NFKC", value).casefold().strip()
-    return re.sub(r"[^\\w]+", "", normalized, flags=re.UNICODE)
+    return re.sub(r"[^\w]+", "", normalized, flags=re.UNICODE)
 
 
 _ALIAS_TO_FIELD = {
