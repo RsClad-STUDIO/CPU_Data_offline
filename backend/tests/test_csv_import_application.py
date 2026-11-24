@@ -1,4 +1,5 @@
 import hashlib
+from contextlib import closing
 import sqlite3
 import tempfile
 import unittest
@@ -98,15 +99,15 @@ class CSVImportApplicationTests(unittest.TestCase):
             }])
             preview = self._preview(
                 db_path,
-                b"CPU Name,Brand,Cores,Threads,PassMark Score\\n"
-                b"Intel Core i7-13700K,,__CLEAR__,32,45000\\n"
-                b"AMD Ryzen 7 7800X3D,AMD,8,16,30000\\n",
+                b"CPU Name,Brand,Cores,Threads,PassMark Score\n"
+                b"Intel Core i7-13700K,,__CLEAR__,32,45000\n"
+                b"AMD Ryzen 7 7800X3D,AMD,8,16,30000\n",
             )
 
             result = apply_csv_import(preview, database_path=db_path)
 
             self.assertEqual((result.inserted, result.updated, result.unchanged), (1, 1, 0))
-            with sqlite3.connect(db_path) as connection:
+            with closing(sqlite3.connect(db_path)) as connection, connection:
                 rows = {
                     row[0]: row[1:]
                     for row in connection.execute(
@@ -128,9 +129,9 @@ class CSVImportApplicationTests(unittest.TestCase):
             self._initialize_database(db_path)
             preview = self._preview(
                 db_path,
-                b"CPU Name,Brand\\nCPU A,Vendor A\\nCPU B,Vendor B\\n",
+                b"CPU Name,Brand\nCPU A,Vendor A\nCPU B,Vendor B\n",
             )
-            with sqlite3.connect(db_path) as connection:
+            with closing(sqlite3.connect(db_path)) as connection, connection:
                 connection.execute("""
                     CREATE TRIGGER reject_cpu_b BEFORE INSERT ON cpus
                     WHEN NEW.name = 'CPU B'
@@ -140,7 +141,7 @@ class CSVImportApplicationTests(unittest.TestCase):
             with self.assertRaisesRegex(sqlite3.IntegrityError, "simulated insert failure"):
                 apply_csv_import(preview, database_path=db_path)
 
-            with sqlite3.connect(db_path) as connection:
+            with closing(sqlite3.connect(db_path)) as connection, connection:
                 self.assertEqual(
                     connection.execute("SELECT COUNT(*) FROM cpus").fetchone()[0],
                     0,
@@ -150,11 +151,11 @@ class CSVImportApplicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             db_path = Path(directory) / "cpus.db"
             self._initialize_database(db_path)
-            csv_bytes = b"CPU Name,Brand,Cores\\nCPU A,Vendor A,8\\n"
+            csv_bytes = b"CPU Name,Brand,Cores\nCPU A,Vendor A,8\n"
 
             first_preview = self._preview(db_path, csv_bytes)
             first_result = apply_csv_import(first_preview, database_path=db_path)
-            with sqlite3.connect(db_path) as connection:
+            with closing(sqlite3.connect(db_path)) as connection, connection:
                 first_updated_at = connection.execute(
                     "SELECT updated_at FROM cpus WHERE name = 'CPU A'"
                 ).fetchone()[0]
@@ -168,7 +169,7 @@ class CSVImportApplicationTests(unittest.TestCase):
                 (second_result.inserted, second_result.updated, second_result.unchanged),
                 (0, 0, 1),
             )
-            with sqlite3.connect(db_path) as connection:
+            with closing(sqlite3.connect(db_path)) as connection, connection:
                 self.assertEqual(
                     connection.execute("SELECT COUNT(*) FROM cpus").fetchone()[0],
                     1,
@@ -186,7 +187,7 @@ class CSVImportApplicationTests(unittest.TestCase):
             self._initialize_database(db_path)
             preview = self._preview(
                 db_path,
-                b"CPU Name,Brand\\nCPU A,Vendor A\\nCPU A,Vendor B\\n",
+                b"CPU Name,Brand\nCPU A,Vendor A\nCPU A,Vendor B\n",
             )
             before = hashlib.sha256(db_path.read_bytes()).hexdigest()
 
@@ -204,9 +205,9 @@ class CSVImportApplicationTests(unittest.TestCase):
             self._initialize_database(db_path)
             preview = self._preview(
                 db_path,
-                b"CPU Name,Brand\\nCPU A,Vendor A\\nCPU B,Vendor B\\n",
+                b"CPU Name,Brand\nCPU A,Vendor A\nCPU B,Vendor B\n",
             )
-            with sqlite3.connect(db_path) as connection:
+            with closing(sqlite3.connect(db_path)) as connection, connection:
                 connection.execute(
                     "INSERT INTO cpus(name, name_key) VALUES(?, ?)",
                     ("CPU B", "cpu b"),
@@ -215,7 +216,7 @@ class CSVImportApplicationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "preview is stale"):
                 apply_csv_import(preview, database_path=db_path)
 
-            with sqlite3.connect(db_path) as connection:
+            with closing(sqlite3.connect(db_path)) as connection, connection:
                 names = [
                     row[0]
                     for row in connection.execute("SELECT name FROM cpus ORDER BY name")
@@ -226,7 +227,7 @@ class CSVImportApplicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             missing = Path(directory) / "missing.db"
             from cpu_data.infrastructure.importers.csv_mapper import preview_csv
-            preview = preview_csv(b"CPU Name\\nCPU A\\n")
+            preview = preview_csv(b"CPU Name\nCPU A\n")
 
             with self.assertRaises(FileNotFoundError):
                 apply_csv_import(preview, database_path=missing)
