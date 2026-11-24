@@ -4,13 +4,12 @@ from __future__ import annotations
 from contextlib import contextmanager, closing
 from datetime import datetime, timezone
 import os
-import re
 from pathlib import Path
 import sqlite3
 import tempfile
-import unicodedata
 
 from ..config import SETTINGS
+from ..domain.identity import normalize_cpu_name
 
 PROJECT_ROOT = os.fspath(SETTINGS.project_root)
 DB_PATH = SETTINGS.db_path
@@ -25,14 +24,6 @@ INSERT_COLUMNS = (
     "base_clock", "boost_clock", "tdp", "socket", "process",
     "memory_support", "igpu", "passmark_score", "source_url", "updated_at",
 )
-
-
-def normalize_cpu_name(name: str) -> str:
-    """Normalize an exact model name for case-insensitive uniqueness."""
-    if not isinstance(name, str) or not name.strip():
-        raise ValueError("CPU name must be a non-empty string")
-    value = unicodedata.normalize("NFKC", name)
-    return re.sub(r"\s+", " ", value).strip().casefold()
 
 
 def get_connection() -> sqlite3.Connection:
