@@ -156,7 +156,13 @@ def preview_csv(
     existing_by_key: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
 
     for existing in existing_records:
-        name = existing.get("name")
+        if isinstance(existing, Mapping):
+            name = existing.get("name")
+        else:
+            try:
+                name = existing["name"]
+            except (KeyError, IndexError, TypeError):
+                name = getattr(existing, "name", None)
         if isinstance(name, str) and name.strip():
             existing_by_key[normalize_cpu_name(name)].append(existing)
 
