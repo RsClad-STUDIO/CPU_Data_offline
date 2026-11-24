@@ -35,8 +35,23 @@ def preview_csv_import(
     values are caller-supplied; retrieved_at is not inferred from local time.
     """
     with closing(database.get_readonly_connection()) as connection:
+        available_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(cpus)")
+        }
+        # Preview historically supports minimal CPU tables containing only
+        # id/name. Capture a stale-write fingerprint only when the complete
+        # application schema is present; apply_csv_import independently
+        # validates that full schema before any write.
+        fingerprint_fields = {"id", *_IMPORT_FIELDS, "updated_at"}
+        can_fingerprint = fingerprint_fields.issubset(available_columns)
+        selected_columns = [
+            field for field in ("id", *_IMPORT_FIELDS, "updated_at")
+            if field in available_columns
+        ]
+        if "name" not in selected_columns:
+            raise sqlite3.DatabaseError("CPU table is missing the required name column")
         existing_records = connection.execute(
-            "SELECT id, " + ", ".join(_IMPORT_FIELDS) + ", updated_at FROM cpus ORDER BY id"
+            "SELECT " + ", ".join(selected_columns) + " FROM cpus ORDER BY id"
         ).fetchall()
 
     preview = preview_csv(
@@ -56,8 +71,12 @@ def preview_csv_import(
     rows = tuple(
         replace(
             row,
-            expected_existing_sha256=_existing_record_fingerprint(
-                existing_by_key[normalize_cpu_name(row.record.name)]
+            expected_existing_sha256=(
+                _existing_record_fingerprint(
+                    existing_by_key[normalize_cpu_name(row.record.name)]
+                )
+                if can_fingerprint
+                else None
             ),
         )
         if row.status == "update" and row.record is not None
