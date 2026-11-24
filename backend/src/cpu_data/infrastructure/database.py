@@ -428,10 +428,25 @@ def get_cpu_by_name(name: str):
     """Return the CPU with the exact canonical identity key, or None."""
     name_key = normalize_cpu_name(name)
     with _readonly_connection() as conn:
-        return conn.execute(
-            "SELECT * FROM cpus WHERE name_key = ?",
-            (name_key,),
-        ).fetchone()
+        columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(cpus)")
+        }
+        if "name_key" in columns:
+            return conn.execute(
+                "SELECT * FROM cpus WHERE name_key = ?",
+                (name_key,),
+            ).fetchone()
+
+        # Read-only compatibility for pre-name_key databases. Current schema
+        # uses the indexed lookup above; legacy files are scanned only until
+        # their normal migration adds the canonical identity column.
+        for row in conn.execute("SELECT * FROM cpus"):
+            try:
+                if normalize_cpu_name(row["name"]) == name_key:
+                    return row
+            except ValueError:
+                continue
+        return None
 
 
 def get_cpu_by_id(cpu_id: int):
