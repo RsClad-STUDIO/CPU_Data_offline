@@ -48,6 +48,32 @@ class CSVMapperTests(unittest.TestCase):
         )
         self.assertEqual(preview.rows[0].status, "error")
 
+    def test_accepts_maximum_signed_sqlite_integer_passmark_score(self):
+        maximum = 9_223_372_036_854_775_807
+        preview = preview_csv(
+            f"CPU Name,PassMark Score\\nCPU A,{maximum}\\n".encode()
+        )
+        self.assertEqual(preview.rows[0].status, "new")
+        self.assertEqual(preview.rows[0].record.passmark_score, maximum)
+
+    def test_rejects_passmark_score_above_sqlite_integer_maximum(self):
+        overflow = 9_223_372_036_854_775_808
+        preview = preview_csv(
+            f"CPU Name,PassMark Score\\nCPU A,{overflow}\\n".encode()
+        )
+        self.assertEqual(preview.rows[0].status, "error")
+        self.assertIn("SQLite INTEGER maximum", preview.rows[0].errors[0])
+
+    def test_escaped_clear_marker_is_preserved_as_literal_value(self):
+        preview = preview_csv(
+            b"CPU Name,Brand\\nCPU A,\\\\__CLEAR__\\n",
+            existing_records=[{"name": "CPU A"}],
+        )
+        row = preview.rows[0]
+        self.assertEqual(row.status, "update")
+        self.assertEqual(row.record.brand, "__CLEAR__")
+        self.assertEqual(row.clear_fields, ())
+
     def test_classifies_exact_existing_cpu_as_update(self):
         preview = preview_csv(
             b"CPU Name,Brand\nIntel Core i7-13700K,Intel\n",
