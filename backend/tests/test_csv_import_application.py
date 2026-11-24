@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cpu_data.application.csv_import import preview_csv_import
+from cpu_data.application.csv_import import apply_csv_import, preview_csv_import
 from cpu_data.infrastructure import database
 
 
@@ -75,6 +75,162 @@ class CSVImportApplicationTests(unittest.TestCase):
                 with self.assertRaises(sqlite3.OperationalError):
                     preview_csv_import(b"CPU Name\nIntel Core i7\n")
             self.assertEqual(db_path.read_bytes(), before)
+
+    def _initialize_database(self, path, records=()):
+        with patch.object(database, "DB_PATH", path):
+            database.init_db()
+            if records:
+                database.upsert_many(list(records))
+
+    def _preview(self, path, csv_bytes):
+        with patch.object(database, "DB_PATH", path):
+            return preview_csv_import(csv_bytes)
+
+    def test_apply_adds_new_cpu_updates_existing_and_explicitly_clears_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpus.db"
+            self._initialize_database(db_path, [{
+                "name": "Intel Core i7-13700K",
+                "brand": "Intel",
+                "cores": "16",
+                "threads": "24",
+                "passmark_score": 40000,
+            }])
+            preview = self._preview(
+                db_path,
+                b"CPU Name,Brand,Cores,Threads,PassMark Score\\n"
+                b"Intel Core i7-13700K,,__CLEAR__,32,45000\\n"
+                b"AMD Ryzen 7 7800X3D,AMD,8,16,30000\\n",
+            )
+
+            result = apply_csv_import(preview, database_path=db_path)
+
+            self.assertEqual((result.inserted, result.updated, result.unchanged), (1, 1, 0))
+            with sqlite3.connect(db_path) as connection:
+                rows = {
+                    row[0]: row[1:]
+                    for row in connection.execute(
+                        "SELECT name, brand, cores, threads, passmark_score FROM cpus"
+                    )
+                }
+            self.assertEqual(
+                rows["Intel Core i7-13700K"],
+                ("Intel", None, "32", 45000),
+            )
+            self.assertEqual(
+                rows["AMD Ryzen 7 7800X3D"],
+                ("AMD", "8", "16", 30000),
+            )
+
+    def test_batch_failure_rolls_back_prior_inserts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpus.db"
+            self._initialize_database(db_path)
+            preview = self._preview(
+                db_path,
+                b"CPU Name,Brand\\nCPU A,Vendor A\\nCPU B,Vendor B\\n",
+            )
+            with sqlite3.connect(db_path) as connection:
+                connection.execute("""
+                    CREATE TRIGGER reject_cpu_b BEFORE INSERT ON cpus
+                    WHEN NEW.name = 'CPU B'
+                    BEGIN SELECT RAISE(ABORT, 'simulated insert failure'); END
+                """)
+
+            with self.assertRaisesRegex(sqlite3.IntegrityError, "simulated insert failure"):
+                apply_csv_import(preview, database_path=db_path)
+
+            with sqlite3.connect(db_path) as connection:
+                self.assertEqual(
+                    connection.execute("SELECT COUNT(*) FROM cpus").fetchone()[0],
+                    0,
+                )
+
+    def test_reimporting_same_csv_is_idempotent_after_a_fresh_preview(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpus.db"
+            self._initialize_database(db_path)
+            csv_bytes = b"CPU Name,Brand,Cores\\nCPU A,Vendor A,8\\n"
+
+            first_preview = self._preview(db_path, csv_bytes)
+            first_result = apply_csv_import(first_preview, database_path=db_path)
+            with sqlite3.connect(db_path) as connection:
+                first_updated_at = connection.execute(
+                    "SELECT updated_at FROM cpus WHERE name = 'CPU A'"
+                ).fetchone()[0]
+
+            second_preview = self._preview(db_path, csv_bytes)
+            self.assertEqual(second_preview.rows[0].status, "update")
+            second_result = apply_csv_import(second_preview, database_path=db_path)
+
+            self.assertEqual((first_result.inserted, first_result.updated), (1, 0))
+            self.assertEqual(
+                (second_result.inserted, second_result.updated, second_result.unchanged),
+                (0, 0, 1),
+            )
+            with sqlite3.connect(db_path) as connection:
+                self.assertEqual(
+                    connection.execute("SELECT COUNT(*) FROM cpus").fetchone()[0],
+                    1,
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT updated_at FROM cpus WHERE name = 'CPU A'"
+                    ).fetchone()[0],
+                    first_updated_at,
+                )
+
+    def test_invalid_preview_is_rejected_without_database_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpus.db"
+            self._initialize_database(db_path)
+            preview = self._preview(
+                db_path,
+                b"CPU Name,Brand\\nCPU A,Vendor A\\nCPU A,Vendor B\\n",
+            )
+            before = hashlib.sha256(db_path.read_bytes()).hexdigest()
+
+            with self.assertRaisesRegex(ValueError, "ambiguous or invalid"):
+                apply_csv_import(preview, database_path=db_path)
+
+            self.assertEqual(
+                hashlib.sha256(db_path.read_bytes()).hexdigest(),
+                before,
+            )
+
+    def test_stale_preview_rolls_back_rows_inserted_earlier_in_batch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpus.db"
+            self._initialize_database(db_path)
+            preview = self._preview(
+                db_path,
+                b"CPU Name,Brand\\nCPU A,Vendor A\\nCPU B,Vendor B\\n",
+            )
+            with sqlite3.connect(db_path) as connection:
+                connection.execute(
+                    "INSERT INTO cpus(name, name_key) VALUES(?, ?)",
+                    ("CPU B", "cpu b"),
+                )
+
+            with self.assertRaisesRegex(ValueError, "preview is stale"):
+                apply_csv_import(preview, database_path=db_path)
+
+            with sqlite3.connect(db_path) as connection:
+                names = [
+                    row[0]
+                    for row in connection.execute("SELECT name FROM cpus ORDER BY name")
+                ]
+            self.assertEqual(names, ["CPU B"])
+
+    def test_missing_write_target_is_not_created(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing.db"
+            from cpu_data.infrastructure.importers.csv_mapper import preview_csv
+            preview = preview_csv(b"CPU Name\\nCPU A\\n")
+
+            with self.assertRaises(FileNotFoundError):
+                apply_csv_import(preview, database_path=missing)
+            self.assertFalse(missing.exists())
 
     def test_database_connection_is_read_only(self):
         with tempfile.TemporaryDirectory() as directory:
