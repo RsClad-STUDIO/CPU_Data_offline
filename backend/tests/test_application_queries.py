@@ -36,12 +36,15 @@ class ApplicationQueryTests(unittest.TestCase):
         self.create_database()
         rows = queries.search_cpus("13700K")
         self.assertEqual(len(rows), 1)
+        self.assertIsInstance(rows[0], dict)
         self.assertEqual(rows[0]["name"], "Intel Core i7-13700K")
 
     def test_get_cpu_by_id_and_exact_name(self):
         self.create_database()
         by_id = queries.get_cpu_by_id(1)
         by_name = queries.get_cpu_by_name("intel core i7-13700k")
+        self.assertIsInstance(by_id, dict)
+        self.assertIsInstance(by_name, dict)
         self.assertEqual(by_id["name"], "Intel Core i7-13700K")
         self.assertEqual(by_name["name"], "Intel Core i7-13700K")
         self.assertIsNone(queries.get_cpu_by_name("Intel Core i5-13600K"))
