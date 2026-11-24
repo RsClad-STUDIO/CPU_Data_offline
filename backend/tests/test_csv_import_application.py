@@ -203,6 +203,34 @@ class CSVImportApplicationTests(unittest.TestCase):
                 before,
             )
 
+    def test_stale_update_preview_rejects_existing_record_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "cpus.db"
+            self._initialize_database(db_path, [{
+                "name": "CPU A",
+                "brand": "Original",
+            }])
+            preview = self._preview(
+                db_path,
+                b"CPU Name,Brand\\nCPU A,From CSV\\n",
+            )
+            with closing(sqlite3.connect(db_path)) as connection, connection:
+                connection.execute(
+                    "UPDATE cpus SET brand = ? WHERE name = ?",
+                    ("Changed elsewhere", "CPU A"),
+                )
+
+            with self.assertRaisesRegex(ValueError, "existing CPU changed after preview"):
+                apply_csv_import(preview, database_path=db_path)
+
+            with closing(sqlite3.connect(db_path)) as connection, connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT brand FROM cpus WHERE name = ?", ("CPU A",)
+                    ).fetchone()[0],
+                    "Changed elsewhere",
+                )
+
     def test_stale_preview_rolls_back_rows_inserted_earlier_in_batch(self):
         with tempfile.TemporaryDirectory() as directory:
             db_path = Path(directory) / "cpus.db"
