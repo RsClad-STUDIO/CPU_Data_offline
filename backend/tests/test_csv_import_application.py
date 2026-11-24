@@ -212,7 +212,7 @@ class CSVImportApplicationTests(unittest.TestCase):
             }])
             preview = self._preview(
                 db_path,
-                b"CPU Name,Brand\\nCPU A,From CSV\\n",
+                b"CPU Name,Brand\nCPU A,From CSV\n",
             )
             with closing(sqlite3.connect(db_path)) as connection, connection:
                 connection.execute(
