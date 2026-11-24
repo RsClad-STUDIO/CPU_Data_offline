@@ -20,6 +20,8 @@ class CSVMappingError(ValueError):
 # Reserved cell value for explicitly clearing an existing field during a future
 # write-enabled import. Blank/NA/null cells continue to mean "not supplied".
 CSV_CLEAR_MARKER = "__CLEAR__"
+# Prefix the reserved marker with one backslash to import it as literal text.
+CSV_CLEAR_ESCAPE = "\\\\__CLEAR__"
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +144,12 @@ def _build_record(
     ))
     if "name" in clear_fields:
         raise ValueError("CPU name cannot be explicitly cleared")
+
+    # An escaped marker is data, not an instruction to clear the field.
+    for header, target in resolved.items():
+        value = values.get(header)
+        if isinstance(value, str) and value.casefold() == CSV_CLEAR_ESCAPE.casefold():
+            mapped[target] = CSV_CLEAR_MARKER
 
     # Keep the domain record's None representation; clear_fields separately
     # distinguishes an explicit clear from an ordinary blank (preserve).
