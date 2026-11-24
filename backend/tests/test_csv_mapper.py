@@ -105,10 +105,11 @@ class CSVMapperTests(unittest.TestCase):
 
     def test_blank_cells_are_not_marked_for_clearing(self):
         preview = preview_csv(
-            b"CPU Name,Brand,PassMark Score\nIntel Core i7-13700K,,\n"
+            b"CPU Name,Brand,PassMark Score\nIntel Core i7-13700K,,\n",
+            existing_records=[{"name": "Intel Core i7-13700K"}],
         )
         row = preview.rows[0]
-        self.assertEqual(row.status, "new")
+        self.assertEqual(row.status, "update")
         self.assertIsNone(row.record.brand)
         self.assertIsNone(row.record.passmark_score)
         self.assertEqual(row.clear_fields, ())
