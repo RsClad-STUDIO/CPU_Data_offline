@@ -75,7 +75,7 @@ def _open_existing_import_database(database_path: str | Path) -> sqlite3.Connect
         raise ValueError(
             "CSV import writes are restricted to temporary SQLite databases"
         ) from error
-    if common_path != str(temporary_root):
+    if os.path.normcase(common_path) != os.path.normcase(str(temporary_root)):
         raise ValueError("CSV import writes are restricted to temporary SQLite databases")
     if not path.is_file():
         raise FileNotFoundError(path)
@@ -127,6 +127,14 @@ def _validate_import_schema(connection: sqlite3.Connection) -> None:
             break
     if not unique_name_key:
         raise sqlite3.DatabaseError("Import target is missing the unique CPU identity index")
+
+    for row in connection.execute("SELECT name, name_key FROM cpus"):
+        try:
+            expected_key = normalize_cpu_name(row["name"])
+        except ValueError as error:
+            raise sqlite3.DatabaseError("Import target contains an invalid CPU name") from error
+        if row["name_key"] != expected_key:
+            raise sqlite3.DatabaseError("Import target contains an inconsistent CPU identity key")
 
 
 def apply_csv_import(
