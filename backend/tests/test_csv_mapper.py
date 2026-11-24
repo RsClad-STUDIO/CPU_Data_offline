@@ -105,7 +105,7 @@ class CSVMapperTests(unittest.TestCase):
 
     def test_blank_cells_are_not_marked_for_clearing(self):
         preview = preview_csv(
-            b"CPU Name,Brand,PassMark Score\\nIntel Core i7-13700K,,\\n"
+            b"CPU Name,Brand,PassMark Score\nIntel Core i7-13700K,,\n"
         )
         row = preview.rows[0]
         self.assertEqual(row.status, "new")
@@ -115,8 +115,8 @@ class CSVMapperTests(unittest.TestCase):
 
     def test_explicit_clear_marker_is_reported_for_only_selected_fields(self):
         preview = preview_csv(
-            b"CPU Name,Brand,PassMark Score\\n"
-            b"Intel Core i7-13700K,__CLEAR__,__CLEAR__\\n",
+            b"CPU Name,Brand,PassMark Score\n"
+            b"Intel Core i7-13700K,__CLEAR__,__CLEAR__\n",
             existing_records=[{"name": "Intel Core i7-13700K"}],
         )
         row = preview.rows[0]
@@ -126,7 +126,7 @@ class CSVMapperTests(unittest.TestCase):
         self.assertEqual(row.clear_fields, ("brand", "passmark_score"))
 
     def test_cpu_name_cannot_be_explicitly_cleared(self):
-        preview = preview_csv(b"CPU Name\\n__CLEAR__\\n")
+        preview = preview_csv(b"CPU Name\n__CLEAR__\n")
         self.assertEqual(preview.rows[0].status, "error")
         self.assertIn("cannot be explicitly cleared", preview.rows[0].errors[0])
         self.assertEqual(preview.rows[0].clear_fields, ())
