@@ -17,8 +17,8 @@ class CSVMappingError(ValueError):
     """CSV headers cannot be mapped unambiguously to CPU fields."""
 
 
-# Reserved cell value for explicitly clearing an existing field during a future
-# write-enabled import. Blank/NA/null cells continue to mean "not supplied".
+# Reserved cell value for explicitly clearing an existing field. Blank/NA/null
+# cells continue to mean "not supplied".
 CSV_CLEAR_MARKER = "__CLEAR__"
 # Prefix the reserved marker with one backslash to import it as literal text.
 CSV_CLEAR_ESCAPE = "\\__CLEAR__"
