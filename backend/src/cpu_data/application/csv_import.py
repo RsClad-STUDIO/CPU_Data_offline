@@ -4,8 +4,10 @@ from __future__ import annotations
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import sqlite3
+import tempfile
 from typing import Mapping
 
 from ..domain.cpu import CPURecord
@@ -63,6 +65,17 @@ _CLEARABLE_FIELDS = frozenset(_IMPORT_FIELDS) - {"name"}
 
 def _open_existing_import_database(database_path: str | Path) -> sqlite3.Connection:
     path = Path(database_path).expanduser().resolve()
+    configured_path = Path(database.DB_PATH).expanduser().resolve()
+    if path == configured_path:
+        raise ValueError("CSV import writes are disabled for the configured application database")
+    temporary_root = Path(tempfile.gettempdir()).resolve()
+    try:
+        if os.path.commonpath((str(path), str(temporary_root))) != str(temporary_root):
+            raise ValueError("CSV import writes are restricted to temporary SQLite databases")
+    except ValueError as error:
+        if "different drives" in str(error).lower() or "cross-device" in str(error).lower():
+            raise ValueError("CSV import writes are restricted to temporary SQLite databases") from error
+        raise
     if not path.is_file():
         raise FileNotFoundError(path)
     connection = sqlite3.connect(
