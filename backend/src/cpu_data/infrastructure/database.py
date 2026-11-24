@@ -424,6 +424,16 @@ def search_cpus(query: str, limit: int = 20):
         """, (f"%{escaped}%", f"{escaped}%", limit)).fetchall()
 
 
+def get_cpu_by_name(name: str):
+    """Return the CPU with the exact canonical identity key, or None."""
+    name_key = normalize_cpu_name(name)
+    with _readonly_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM cpus WHERE name_key = ?",
+            (name_key,),
+        ).fetchone()
+
+
 def get_cpu_by_id(cpu_id: int):
     with _readonly_connection() as conn:
         return conn.execute("SELECT * FROM cpus WHERE id = ?", (cpu_id,)).fetchone()
