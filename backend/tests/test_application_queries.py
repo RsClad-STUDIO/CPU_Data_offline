@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,7 +48,7 @@ class ApplicationQueryTests(unittest.TestCase):
 
     def test_exact_name_lookup_supports_legacy_database_without_name_key(self):
         self.db_path.parent.mkdir(parents=True)
-        connection = __import__("sqlite3").connect(self.db_path)
+        connection = sqlite3.connect(self.db_path)
         try:
             connection.execute(
                 "CREATE TABLE cpus (id INTEGER PRIMARY KEY, name TEXT NOT NULL)"
