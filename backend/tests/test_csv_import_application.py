@@ -78,7 +78,7 @@ class CSVImportApplicationTests(unittest.TestCase):
             self.assertEqual(db_path.read_bytes(), before)
 
     def _initialize_database(self, path, records=()):
-        with patch.object(database, "DB_PATH", path):
+        with patch.object(database, "DB_PATH", str(path)):
             database.init_db()
             if records:
                 database.upsert_many(list(records))
@@ -238,7 +238,7 @@ class CSVImportApplicationTests(unittest.TestCase):
             db_path = Path(directory) / "cpus.db"
             self._initialize_database(db_path)
             from cpu_data.infrastructure.importers.csv_mapper import preview_csv
-            preview = preview_csv(b"CPU Name,Brand\\nCPU A,Vendor A\\n")
+            preview = preview_csv(b"CPU Name,Brand\nCPU A,Vendor A\n")
             before = hashlib.sha256(db_path.read_bytes()).hexdigest()
 
             with patch.object(database, "DB_PATH", str(db_path)):
