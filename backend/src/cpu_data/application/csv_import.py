@@ -154,12 +154,38 @@ def _validate_import_schema(connection: sqlite3.Connection) -> None:
     if not {"cpus", "meta"}.issubset(tables):
         raise sqlite3.DatabaseError("Import target is missing required tables")
 
-    columns = {
-        row["name"] for row in connection.execute("PRAGMA table_info(cpus)")
+    cpu_info = {
+        row["name"]: row for row in connection.execute("PRAGMA table_info(cpus)")
     }
-    required = {"id", "name", "name_key", *_IMPORT_FIELDS, "updated_at"}
-    if not required.issubset(columns):
+    expected_cpu_types = {
+        "id": "INTEGER",
+        "name": "TEXT",
+        "name_key": "TEXT",
+        **{
+            field: ("INTEGER" if field == "passmark_score" else "TEXT")
+            for field in _IMPORT_FIELDS
+        },
+        "updated_at": "TEXT",
+    }
+    if not set(expected_cpu_types).issubset(cpu_info):
         raise sqlite3.DatabaseError("Import target CPU schema is incomplete")
+    for column, expected_type in expected_cpu_types.items():
+        if str(cpu_info[column]["type"]).upper() != expected_type:
+            raise sqlite3.DatabaseError("Import target CPU schema has incompatible column types")
+    if cpu_info["id"]["pk"] != 1 or cpu_info["name"]["notnull"] != 1:
+        raise sqlite3.DatabaseError("Import target CPU schema has incompatible key constraints")
+
+    meta_info = {
+        row["name"]: row for row in connection.execute("PRAGMA table_info(meta)")
+    }
+    if not {"key", "value"}.issubset(meta_info):
+        raise sqlite3.DatabaseError("Import target metadata schema is incomplete")
+    if (
+        str(meta_info["key"]["type"]).upper() != "TEXT"
+        or str(meta_info["value"]["type"]).upper() != "TEXT"
+        or meta_info["key"]["pk"] != 1
+    ):
+        raise sqlite3.DatabaseError("Import target metadata schema is incompatible")
 
     version = connection.execute(
         "SELECT value FROM meta WHERE key = 'schema_version'"
