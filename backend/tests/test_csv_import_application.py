@@ -255,6 +255,51 @@ class CSVImportApplicationTests(unittest.TestCase):
                 ]
             self.assertEqual(names, ["CPU B"])
 
+    def test_apply_rejects_incompatible_primary_key_schema(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            configured_db = root / "configured.db"
+            target = root / "target.db"
+            connection = sqlite3.connect(target)
+            try:
+                connection.execute("""
+                    CREATE TABLE cpus (
+                        id INTEGER, name TEXT NOT NULL, name_key TEXT,
+                        brand TEXT, family TEXT, cores TEXT, threads TEXT,
+                        base_clock TEXT, boost_clock TEXT, tdp TEXT, socket TEXT,
+                        process TEXT, memory_support TEXT, igpu TEXT,
+                        passmark_score INTEGER, source_url TEXT, updated_at TEXT
+                    )
+                """)
+                connection.execute(
+                    "CREATE UNIQUE INDEX ux_cpus_name_key ON cpus(name_key)"
+                )
+                connection.execute(
+                    "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)"
+                )
+                connection.execute(
+                    "INSERT INTO meta(key, value) VALUES('schema_version', ?)",
+                    (str(database.SCHEMA_VERSION),),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            from cpu_data.infrastructure.importers.csv_mapper import preview_csv
+            preview = preview_csv(b"CPU Name,Brand\\nCPU A,Vendor A\\n")
+
+            with patch.object(database, "DB_PATH", configured_db):
+                with self.assertRaisesRegex(
+                    sqlite3.DatabaseError, "incompatible key constraints"
+                ):
+                    apply_csv_import(preview, database_path=target)
+
+            with closing(sqlite3.connect(target)) as connection:
+                self.assertEqual(
+                    connection.execute("SELECT COUNT(*) FROM cpus").fetchone()[0],
+                    0,
+                )
+
     def test_missing_write_target_is_not_created(self):
         with tempfile.TemporaryDirectory() as directory:
             missing = Path(directory) / "missing.db"
