@@ -126,10 +126,13 @@ class CSVImportApplicationTests(unittest.TestCase):
     def test_batch_failure_rolls_back_prior_inserts(self):
         with tempfile.TemporaryDirectory() as directory:
             db_path = Path(directory) / "cpus.db"
-            self._initialize_database(db_path)
+            self._initialize_database(db_path, [{
+                "name": "CPU A",
+                "brand": "Original A",
+            }])
             preview = self._preview(
                 db_path,
-                b"CPU Name,Brand\nCPU A,Vendor A\nCPU B,Vendor B\n",
+                b"CPU Name,Brand\nCPU A,Changed A\nCPU B,Vendor B\n",
             )
             with closing(sqlite3.connect(db_path)) as connection, connection:
                 connection.execute("""
@@ -142,10 +145,10 @@ class CSVImportApplicationTests(unittest.TestCase):
                 apply_csv_import(preview, database_path=db_path)
 
             with closing(sqlite3.connect(db_path)) as connection, connection:
-                self.assertEqual(
-                    connection.execute("SELECT COUNT(*) FROM cpus").fetchone()[0],
-                    0,
-                )
+                rows = connection.execute(
+                    "SELECT name, brand FROM cpus ORDER BY name"
+                ).fetchall()
+                self.assertEqual([tuple(row) for row in rows], [("CPU A", "Original A")])
 
     def test_reimporting_same_csv_is_idempotent_after_a_fresh_preview(self):
         with tempfile.TemporaryDirectory() as directory:
