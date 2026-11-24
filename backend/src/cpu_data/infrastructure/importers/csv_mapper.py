@@ -17,6 +17,11 @@ class CSVMappingError(ValueError):
     """CSV headers cannot be mapped unambiguously to CPU fields."""
 
 
+# Reserved cell value for explicitly clearing an existing field during a future
+# write-enabled import. Blank/NA/null cells continue to mean "not supplied".
+CSV_CLEAR_MARKER = "__CLEAR__"
+
+
 @dataclass(frozen=True, slots=True)
 class CSVPreviewRow:
     row_number: int
@@ -24,6 +29,7 @@ class CSVPreviewRow:
     record: CPURecord | None
     unknown_fields: Mapping[str, str | None]
     errors: tuple[str, ...] = ()
+    clear_fields: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,11 +128,25 @@ def _resolve_columns(
 def _build_record(
     values: Mapping[str, str | None],
     resolved: Mapping[str, str],
-) -> CPURecord:
+) -> tuple[CPURecord, tuple[str, ...]]:
     mapped: dict[str, Any] = {
         target: values.get(header)
         for header, target in resolved.items()
     }
+    clear_fields = tuple(sorted(
+        target
+        for header, target in resolved.items()
+        if isinstance(values.get(header), str)
+        and values[header].strip().casefold() == CSV_CLEAR_MARKER.casefold()
+    ))
+    if "name" in clear_fields:
+        raise ValueError("CPU name cannot be explicitly cleared")
+
+    # Keep the domain record's None representation; clear_fields separately
+    # distinguishes an explicit clear from an ordinary blank (preserve).
+    for field in clear_fields:
+        mapped[field] = None
+
     raw_score = mapped.get("passmark_score")
     if raw_score is not None:
         if not re.fullmatch(r"[0-9]+", raw_score.strip()):
@@ -135,7 +155,7 @@ def _build_record(
                 "decimal or formatted values are not accepted"
             )
         mapped["passmark_score"] = int(raw_score)
-    return CPURecord.from_mapping(mapped)
+    return CPURecord.from_mapping(mapped), clear_fields
 
 
 def preview_csv(
@@ -158,7 +178,9 @@ def preview_csv(
     document: CSVDocument = read_csv(source, encoding=encoding, delimiter=delimiter)
     resolved, unknown_columns = _resolve_columns(document.headers, column_mapping)
 
-    prepared: list[tuple[int, CPURecord | None, dict[str, str | None], tuple[str, ...]]] = []
+    prepared: list[
+        tuple[int, CPURecord | None, dict[str, str | None], tuple[str, ...], tuple[str, ...]]
+    ] = []
     imported_keys: Counter[str] = Counter()
     existing_by_key: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
 
@@ -176,14 +198,14 @@ def preview_csv(
     for row in document.rows:
         unknown = {key: row.values[key] for key in unknown_columns}
         try:
-            record = _build_record(row.values, resolved)
+            record, clear_fields = _build_record(row.values, resolved)
             imported_keys[normalize_cpu_name(record.name)] += 1
-            prepared.append((row.row_number, record, unknown, ()))
+            prepared.append((row.row_number, record, unknown, (), clear_fields))
         except (TypeError, ValueError) as error:
-            prepared.append((row.row_number, None, unknown, (str(error),)))
+            prepared.append((row.row_number, None, unknown, (str(error),), ()))
 
     preview_rows: list[CSVPreviewRow] = []
-    for row_number, record, unknown, errors in prepared:
+    for row_number, record, unknown, errors, clear_fields in prepared:
         if record is None:
             status = "error"
         else:
@@ -204,6 +226,7 @@ def preview_csv(
             record=record,
             unknown_fields=unknown,
             errors=errors,
+            clear_fields=clear_fields,
         ))
 
     return CSVPreview(
