@@ -11,6 +11,11 @@ from typing import Any
 from ..infrastructure import database
 
 
+def _record_dict(row):
+    """Detach application results from sqlite3.Row and its connection layer."""
+    return dict(row) if row is not None else None
+
+
 def search_cpus(query: str, limit: int = 20):
     """Search CPU records, preserving the infrastructure layer's ordering."""
     if not isinstance(query, str):
@@ -18,21 +23,24 @@ def search_cpus(query: str, limit: int = 20):
     normalized = query.strip()
     if not normalized:
         raise ValueError("query must not be empty")
-    return database.search_cpus(normalized, limit=limit)
+    return [
+        _record_dict(row)
+        for row in database.search_cpus(normalized, limit=limit)
+    ]
 
 
 def get_cpu_by_id(cpu_id: int):
     """Return one CPU by its numeric database identifier, or None."""
     if isinstance(cpu_id, bool) or not isinstance(cpu_id, int) or cpu_id < 1:
         raise ValueError("cpu_id must be a positive integer")
-    return database.get_cpu_by_id(cpu_id)
+    return _record_dict(database.get_cpu_by_id(cpu_id))
 
 
 def get_cpu_by_name(name: str):
     """Return an exact normalized CPU-name match, or None."""
     if not isinstance(name, str) or not name.strip():
         raise ValueError("name must be a non-empty string")
-    return database.get_cpu_by_name(name)
+    return _record_dict(database.get_cpu_by_name(name))
 
 
 def get_database_stats() -> dict[str, Any]:
