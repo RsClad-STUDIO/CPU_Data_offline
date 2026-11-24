@@ -29,16 +29,10 @@ def get_cpu_by_id(cpu_id: int):
 
 
 def get_cpu_by_name(name: str):
-    """Return an exact case-insensitive CPU-name match, or None."""
+    """Return an exact normalized CPU-name match, or None."""
     if not isinstance(name, str) or not name.strip():
         raise ValueError("name must be a non-empty string")
-    wanted = database.normalize_cpu_name(name)
-    # Names are unique under the database's normalized name key.
-    rows = database.search_cpus(name.strip(), limit=100)
-    for row in rows:
-        if database.normalize_cpu_name(row["name"]) == wanted:
-            return row
-    return None
+    return database.get_cpu_by_name(name)
 
 
 def get_database_stats() -> dict[str, Any]:
