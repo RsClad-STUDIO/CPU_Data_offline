@@ -34,7 +34,7 @@ class CSVPreview:
     encoding: str
     delimiter: str
     sha256: str
-    source: str | None = None
+    source_name: str | None = None
     retrieved_at: str | None = None
     profile: str | None = None
 
@@ -145,7 +145,7 @@ def preview_csv(
     encoding: str | None = None,
     delimiter: str = ",",
     column_mapping: Mapping[str, str] | None = None,
-    source: str | None = None,
+    source_name: str | None = None,
     retrieved_at: str | None = None,
     profile: str | None = None,
 ) -> CSVPreview:
@@ -213,7 +213,7 @@ def preview_csv(
         encoding=document.encoding,
         delimiter=document.delimiter,
         sha256=document.sha256,
-        source=source,
+        source_name=source_name,
         retrieved_at=retrieved_at,
         profile=profile,
     )

@@ -36,7 +36,7 @@ def preview_csv_import(
         encoding=encoding,
         delimiter=delimiter,
         column_mapping=column_mapping,
-        source=source_name,
+        source_name=source_name,
         retrieved_at=retrieved_at,
         profile=profile,
     )

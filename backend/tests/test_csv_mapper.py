@@ -120,7 +120,7 @@ class CSVMapperTests(unittest.TestCase):
         raw = b"CPU Name\\nIntel Core i7-13700K\\n"
         preview = preview_csv(
             raw,
-            source="vendor-catalog",
+            source_name="vendor-catalog",
             retrieved_at="2026-11-24",
             profile="catalog-v1",
         )
