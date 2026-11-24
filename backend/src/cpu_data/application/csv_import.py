@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+import hashlib
+import json
 import os
 from pathlib import Path
 import sqlite3
@@ -34,10 +36,10 @@ def preview_csv_import(
     """
     with closing(database.get_readonly_connection()) as connection:
         existing_records = connection.execute(
-            "SELECT name FROM cpus ORDER BY id"
+            "SELECT id, " + ", ".join(_IMPORT_FIELDS) + ", updated_at FROM cpus ORDER BY id"
         ).fetchall()
 
-    return preview_csv(
+    preview = preview_csv(
         source,
         existing_records=existing_records,
         encoding=encoding,
@@ -47,6 +49,22 @@ def preview_csv_import(
         retrieved_at=retrieved_at,
         profile=profile,
     )
+    existing_by_key = {
+        normalize_cpu_name(record["name"]): record
+        for record in existing_records
+    }
+    rows = tuple(
+        replace(
+            row,
+            expected_existing_sha256=_existing_record_fingerprint(
+                existing_by_key[normalize_cpu_name(row.record.name)]
+            ),
+        )
+        if row.status == "update" and row.record is not None
+        else row
+        for row in preview.rows
+    )
+    return replace(preview, rows=rows)
 
 
 
@@ -61,6 +79,13 @@ class CSVImportResult:
 
 _IMPORT_FIELDS = tuple(CPURecord.__dataclass_fields__)
 _CLEARABLE_FIELDS = frozenset(_IMPORT_FIELDS) - {"name"}
+
+
+def _existing_record_fingerprint(record: Mapping[str, object]) -> str:
+    fields = ("id", *_IMPORT_FIELDS, "updated_at")
+    snapshot = {field: record[field] for field in fields}
+    payload = json.dumps(snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _open_existing_import_database(database_path: str | Path) -> sqlite3.Connection:
@@ -161,6 +186,11 @@ def apply_csv_import(
     ]
     if rejected:
         raise ValueError("CSV preview contains ambiguous or invalid rows")
+    if any(
+        row.status == "update" and row.expected_existing_sha256 is None
+        for row in preview.rows
+    ):
+        raise ValueError("CSV preview is missing the existing-record snapshot; create a fresh preview")
 
     seen_keys: set[str] = set()
     for row in preview.rows:
@@ -189,7 +219,7 @@ def apply_csv_import(
             values = record.to_mapping()
             name_key = normalize_cpu_name(record.name)
             existing = connection.execute(
-                "SELECT id, " + ", ".join(_IMPORT_FIELDS)
+                "SELECT id, " + ", ".join(_IMPORT_FIELDS) + ", updated_at"
                 + " FROM cpus WHERE name_key = ?",
                 (name_key,),
             ).fetchone()
@@ -213,6 +243,10 @@ def apply_csv_import(
             if existing is None:
                 raise ValueError(
                     f"CSV preview is stale; CPU no longer exists: {record.name}"
+                )
+            if _existing_record_fingerprint(existing) != row.expected_existing_sha256:
+                raise ValueError(
+                    f"CSV preview is stale; existing CPU changed after preview: {record.name}"
                 )
 
             target = {"name": record.name}
