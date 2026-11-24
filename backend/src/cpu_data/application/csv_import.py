@@ -70,12 +70,13 @@ def _open_existing_import_database(database_path: str | Path) -> sqlite3.Connect
         raise ValueError("CSV import writes are disabled for the configured application database")
     temporary_root = Path(tempfile.gettempdir()).resolve()
     try:
-        if os.path.commonpath((str(path), str(temporary_root))) != str(temporary_root):
-            raise ValueError("CSV import writes are restricted to temporary SQLite databases")
+        common_path = os.path.commonpath((str(path), str(temporary_root)))
     except ValueError as error:
-        if "different drives" in str(error).lower() or "cross-device" in str(error).lower():
-            raise ValueError("CSV import writes are restricted to temporary SQLite databases") from error
-        raise
+        raise ValueError(
+            "CSV import writes are restricted to temporary SQLite databases"
+        ) from error
+    if common_path != str(temporary_root):
+        raise ValueError("CSV import writes are restricted to temporary SQLite databases")
     if not path.is_file():
         raise FileNotFoundError(path)
     connection = sqlite3.connect(
