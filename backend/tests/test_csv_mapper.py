@@ -37,8 +37,6 @@ class CSVMapperTests(unittest.TestCase):
 
     def test_rejects_non_integer_passmark_score(self):
         preview = preview_csv(
-            b"CPU Name,PassMark Score\nIntel Core i7-13700K,45,646\n"
-        ) if False else preview_csv(
             b'CPU Name,PassMark Score\nIntel Core i7-13700K,"45.6k"\n'
         )
         self.assertEqual(preview.rows[0].status, "error")

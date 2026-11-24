@@ -10,7 +10,7 @@ from typing import Any, Iterable, Mapping
 
 from ...domain.cpu import CPURecord
 from ...domain.identity import normalize_cpu_name
-from .csv_reader import CSVDocument, CSVImportError, read_csv
+from .csv_reader import CSVDocument, read_csv
 
 
 class CSVMappingError(ValueError):
